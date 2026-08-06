@@ -1,0 +1,55 @@
+{
+  "report_date": "2026-08-05",
+  "generated_at": "2026-08-05T16:30:49",
+  "summary": "2026-08-05 共监测新闻 0 条。 识别重大事件 0 条、利好 0 条、利空 0 条、风险 0 条、业绩相关 0 条。",
+  "llm_used": false,
+  "major_events": [],
+  "bullish": [],
+  "bearish": [],
+  "risks": [],
+  "performance_changes": [],
+  "pipeline_stats": {
+    "fetch_news": {
+      "skipped": true,
+      "loaded": 32
+    },
+    "process_documents": {
+      "success": true,
+      "message": "处理完成，共 1105 个 Token",
+      "pdf_tokens": 1075,
+      "news_tokens": 32,
+      "total_tokens": 1105,
+      "dedup_removed": 2,
+      "tokens_json": "C:\\Users\\Administrator\\Desktop\\financial-poc\\data\\processed\\tokens\\tokens.json",
+      "unified_csv": "C:\\Users\\Administrator\\Desktop\\financial-poc\\data\\processed\\tokens\\unified.csv",
+      "pdf_files": 2,
+      "pdf_failed": 0,
+      "news_records": 32,
+      "news_failed": 0
+    },
+    "build_index": {
+      "status": "success",
+      "collection": "financial_poc",
+      "indexed": 1105,
+      "skipped_existing": 0,
+      "skipped_invalid": 0,
+      "failed": 0,
+      "before_count": 0,
+      "after_count": 1105,
+      "embedding_model": "BAAI/bge-small-zh-v1.5",
+      "success": true,
+      "message": "索引完成: 新增 1105 条, 合计 1105 条"
+    },
+    "analyze": {
+      "success": true,
+      "message": "分析完成: 重大 0 / 利好 0 / 利空 0 / 风险 0 / 业绩 0",
+      "major_events": 0,
+      "bullish": 0,
+      "bearish": 0,
+      "risks": 0,
+      "performance_changes": 0,
+      "llm_used": false
+    }
+  },
+  "errors": []
+}
