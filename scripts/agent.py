@@ -2,15 +2,10 @@
 Financial Agent 统一入口（PDF 财报 + 财经新闻）。
 
 用法:
-    python scripts/agent.py run                     # 自主 Agent：同步+分析+LLM简报（推荐）
-    python scripts/agent.py serve --time 08:00      # 常驻自主 Agent，每天自动运行
-    python scripts/agent.py sync                    # 抓新闻 + 处理 + 建索引
-    python scripts/agent.py pdf                     # 增量处理 PDF
-    python scripts/agent.py query "贵州茅台2024年净利润"
-    python scripts/agent.py ask "贵州茅台2024年净利润是多少"
-    python scripts/agent.py ask -i                  # 连续对话
-    python scripts/agent.py daily                   # 生成日报（无公司简报）
-    python scripts/agent.py schedule --time 08:00   # 定时日报（旧版）
+    python scripts/agent.py analyze                    # 一键全分析（推荐）
+    python scripts/agent.py analyze 贵州茅台.pdf       # 指定财报 PDF
+    python scripts/agent.py analyze 贵州茅台            # 指定公司（已入库）
+    python scripts/agent.py                            # 交互检索演示
 """
 
 from __future__ import annotations
@@ -35,10 +30,14 @@ from config import (
     ensure_dirs,
     setup_logging,
 )
-from src.agent.autonomic_agent import AutonomicAgent, create_autonomic_agent
+from src.analysis.valuation import ValuationResult
+from src.analysis.market_compare import ComparisonResult
+from src.analysis.full_report import FullAnalysisResult
+from src.agent.autonomic_agent import create_autonomic_agent
 from src.agent.daily.scheduler import start_scheduler
 from src.agent.financial_agent import FinancialAgent, create_financial_agent
 from src.chat.history import INTERACTIVE_COMMAND_HELP, ConversationHistory
+from src.utils.query_insights import build_query_insight, format_query_insight, mark_insight_source
 from src.utils.source_display import format_reference_meta, source_type_label
 
 add_project_root_to_path()
@@ -48,17 +47,38 @@ logger = setup_logging(__name__)
 def _print_query(payload: dict) -> None:
     print(f"\n问题: {payload['question']}")
     print(f"模式: {payload['mode']}")
-    print(f"命中 {payload['count']} 条:\n")
-    for index, item in enumerate(payload["results"], start=1):
+
+    results = payload.get("results") or []
+    insight = build_query_insight(payload["question"], results)
+    if insight:
+        print(format_query_insight(insight))
+
+    print(f"命中 {payload['count']} 条原文:\n")
+    for index, item in enumerate(results, start=1):
         meta = item.get("metadata") or {}
         source = str(meta.get("source") or "")
-        print(f"--- [{index}] {source_type_label(source)} ---")
+        tag = mark_insight_source(index, insight)
+        print(f"--- [{index}] {source_type_label(source)}{tag} ---")
         for part in format_reference_meta(meta):
             print(f"  {part}")
         print(f"  score: {item.get('score', 0):.4f}")
         if item.get("rerank_score") is not None:
             print(f"  rerank_score: {item['rerank_score']:.4f}")
-        print(f"  text: {item.get('text', '')[:300]}")
+
+        text = str(item.get("text") or "")
+        if insight and index in {m.source_rank for m in insight.metrics}:
+            snippet = next(
+                (m.snippet for m in insight.metrics if m.source_rank == index and m.snippet),
+                "",
+            )
+            if snippet:
+                print("  关键片段:")
+                for line in snippet.splitlines():
+                    print(f"  {line}")
+            else:
+                print(f"  text: {text[:200]}")
+        else:
+            print(f"  text: {text[:200]}")
         print()
 
 
@@ -130,6 +150,205 @@ def _print_daily(ctx) -> None:
             print(f"  - {error}")
 
 
+def _print_valuation(result: ValuationResult) -> None:
+    print("\n" + "=" * 60)
+    print(f"  估值分析 · {result.entity_name} ({result.entity_id})")
+    print("=" * 60)
+    print(f"  财报年份: {result.report_year}")
+    print(f"  结论: {result.verdict}  （评分 {result.score:+.1f}，置信度 {result.confidence}）")
+    print()
+
+    market = result.market
+    print("  【估值指标】")
+    if market.get("price") is not None:
+        src = market.get("price_source") or market.get("source") or ""
+        suffix = f" ({src})" if src else ""
+        print(f"    现价: {market['price']}{suffix}")
+    if market.get("pe_ttm") is not None:
+        pe_src = market.get("pe_source") or ""
+        tag = "推算" if str(pe_src).startswith("computed") else "动态"
+        print(f"    PE({tag}): {market['pe_ttm']:.2f}")
+    if market.get("pb") is not None:
+        pb_src = market.get("pb_source") or ""
+        tag = "推算" if str(pb_src).startswith("computed") else "实时"
+        print(f"    PB({tag}): {market['pb']:.2f}")
+    if market.get("market_cap") is not None:
+        print(f"    总市值: {market['market_cap']}")
+    if market.get("industry"):
+        print(f"    行业: {market['industry']}")
+
+    print("\n  【财报基本面】")
+    period = result.fundamentals.get("period_label") or result.report_year
+    print(f"    报告期: {period}")
+    for key, label in (
+        ("net_profit", "净利润"),
+        ("revenue", "营业收入"),
+        ("eps", "每股收益"),
+        ("bvps", "每股净资产"),
+        ("roe", "ROE"),
+    ):
+        item = result.fundamentals.get(key)
+        if isinstance(item, dict) and item.get("display"):
+            print(f"    {label}: {item['display']}")
+    if result.fundamentals.get("revenue_growth_pct") is not None:
+        print(f"    营收同比: {result.fundamentals['revenue_growth_pct']}%")
+    if result.fundamentals.get("profit_growth_pct") is not None:
+        print(f"    净利润同比: {result.fundamentals['profit_growth_pct']}%")
+    if result.fundamentals.get("peg") is not None:
+        print(f"    PEG: {result.fundamentals['peg']}")
+
+    print("\n  【分析依据】")
+    for reason in result.reasons:
+        print(f"    · {reason}")
+
+    if result.report_path:
+        print(f"\n  报告已保存: {result.report_path}")
+    print("=" * 60)
+    print("  免责声明: PoC 规则分析，不构成投资建议")
+    print("=" * 60)
+
+
+def _print_comparison(result: ComparisonResult) -> None:
+    print("\n" + "=" * 60)
+    print(f"  实时对比分析 · {result.entity_name} ({result.entity_id})")
+    print("=" * 60)
+    print(f"  行业: {result.industry or '—'}")
+    print(f"  相对同业: {result.relative_verdict}")
+    print(f"  新闻情绪: {result.news_sentiment}")
+    print(f"\n  摘要: {result.summary}")
+
+    t = result.target
+    print("\n  【目标公司 · 实时行情】")
+    if t.price is not None:
+        print(f"    现价: {t.price}")
+    if t.pe_ttm is not None:
+        print(f"    PE: {t.pe_ttm:.2f}")
+    if t.pb is not None:
+        print(f"    PB: {t.pb:.2f}")
+    if t.change_pct is not None:
+        print(f"    涨跌幅: {t.change_pct:.2f}%")
+
+    s = result.industry_stats
+    if s.peer_count:
+        print("\n  【行业对比】")
+        print(f"    同业样本: {s.peer_count} 只")
+        if s.avg_pe is not None:
+            print(f"    行业平均 PE: {s.avg_pe:.1f}（目标排名 {s.target_pe_rank}）")
+        if s.avg_pb is not None:
+            print(f"    行业平均 PB: {s.avg_pb:.2f}（目标排名 {s.target_pb_rank}）")
+        print("\n    同业 PE/PB 一览:")
+        for row in [result.target, *result.peers[:6]]:
+            pe = f"{row.pe_ttm:.1f}" if row.pe_ttm else "—"
+            pb = f"{row.pb:.2f}" if row.pb else "—"
+            mark = " ← 目标" if row.entity_id == result.entity_id else ""
+            print(f"      {row.entity_name}: PE={pe}, PB={pb}{mark}")
+
+    if result.watchlist:
+        print("\n  【监控列表对比】")
+        for row in result.watchlist:
+            pe = f"{row.pe_ttm:.1f}" if row.pe_ttm else "—"
+            pb = f"{row.pb:.2f}" if row.pb else "—"
+            print(f"    {row.entity_name}: PE={pe}, PB={pb}")
+
+    if result.news:
+        print("\n  【近期网络资讯】")
+        for item in result.news[:5]:
+            print(f"    · [{item.source}] {item.title[:60]}")
+
+    if result.valuation:
+        v = result.valuation
+        print(f"\n  【财报估值】{v.verdict}（置信度 {v.confidence}）")
+
+    if result.report_path:
+        print(f"\n  报告已保存: {result.report_path}")
+    print("=" * 60)
+
+
+def _print_full_analysis(results: list[FullAnalysisResult]) -> None:
+    for result in results:
+        print("\n" + "=" * 60)
+        print(f"  全量分析 · {result.entity_name} ({result.entity_id})")
+        print("=" * 60)
+        print(f"  报告期: {result.period_label}")
+        print(f"  最终结论: {result.final_verdict}  （评分 {result.final_score:+.1f}，置信度 {result.final_confidence}）")
+        print(f"\n  摘要: {result.executive_summary}")
+
+        if result.keywords:
+            print(f"\n  【关键词】{', '.join(result.keywords[:12])}")
+
+        v = result.valuation
+        if v:
+            print("\n  【财报基本面】")
+            for key, label in (
+                ("net_profit", "净利润"),
+                ("revenue", "营业收入"),
+                ("eps", "每股收益"),
+                ("roe", "ROE"),
+            ):
+                item = v.fundamentals.get(key)
+                if isinstance(item, dict) and item.get("display"):
+                    print(f"    {label}: {item['display']}")
+
+        c = result.comparison
+        if c:
+            print("\n  【网络实时】")
+            if c.target.price is not None:
+                print(f"    现价: {c.target.price}")
+            if c.target.pe_ttm is not None:
+                print(f"    PE: {c.target.pe_ttm:.2f}")
+            if c.target.pb is not None:
+                print(f"    PB: {c.target.pb:.2f}")
+            print(f"    相对同业: {c.relative_verdict}")
+            print(f"    新闻情绪: {c.news_sentiment}")
+            if c.news:
+                print("    近期资讯:")
+                for item in c.news[:3]:
+                    print(f"      · [{item.source}] {item.title[:50]}")
+
+        print("\n  【综合依据】")
+        for reason in result.synthesis_reasons[:6]:
+            print(f"    · {reason}")
+
+        if result.report_path:
+            print(f"\n  报告已保存: {result.report_path}")
+        print("=" * 60)
+        print("  免责声明: PoC 自动分析，不构成投资建议")
+        print("=" * 60)
+
+
+def _run_interactive_query(agent: FinancialAgent, *, top_k: int | None = None) -> None:
+    """交互式检索演示：无需 LLM，适合汇报现场。"""
+    print("\n" + "=" * 60)
+    print("  Financial Agent · 智能检索")
+    print("=" * 60)
+    print("  输入问题，从 PDF 财报 / 财经新闻中检索相关内容")
+    print()
+    print("  示例问题：")
+    print("    贵州茅台2024年归属于上市公司股东的净利润")
+    print("    招商银行2024年营业收入")
+    print()
+    print("  输入 q 或 退出 结束演示")
+    print("  （首次检索需加载模型，约 1～2 分钟）")
+    print("=" * 60)
+
+    while True:
+        try:
+            question = input("\n请输入问题: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n演示结束。")
+            break
+        if not question:
+            continue
+        if question.lower() in {"exit", "quit", "q", "退出"}:
+            print("演示结束。")
+            break
+        try:
+            payload = agent.query(question, top_k=top_k)
+            _print_query(payload)
+        except Exception as exc:
+            print(f"\n检索失败: {exc}")
+
+
 def _print_sync(payload: dict) -> None:
     print("\n=== Agent 同步完成 ===" if payload.get("success") else "\n=== Agent 同步失败 ===")
     print(payload.get("message", ""))
@@ -162,9 +381,14 @@ def parse_args() -> argparse.Namespace:
     pdf_p = sub.add_parser("pdf", help="增量处理 PDF")
     pdf_p.add_argument("files", nargs="*", help="PDF 路径；省略则处理 data/raw/pdf/ 全部")
     pdf_p.add_argument("--no-index", action="store_true", help="不更新向量索引")
+    pdf_p.add_argument(
+        "--valuate",
+        action="store_true",
+        help="处理完成后自动输出估值结论（高估/合理/低估）",
+    )
 
     query_p = sub.add_parser("query", help="智能检索")
-    query_p.add_argument("question", help="检索问题")
+    query_p.add_argument("question", nargs="?", help="检索问题；省略则进入交互模式")
     query_p.add_argument("-k", "--top-k", type=int, default=0)
 
     ask_p = sub.add_parser("ask", help="RAG 问答")
@@ -206,6 +430,42 @@ def parse_args() -> argparse.Namespace:
     serve_p.add_argument("--news-days", type=int, default=AGENT_NEWS_DAYS)
     serve_p.add_argument("--provider", choices=("openai", "deepseek", "qwen"), default=None)
 
+    val_p = sub.add_parser("valuate", help="财报估值分析：高估/合理/低估")
+    val_p.add_argument("target", help="公司名或代码，如 贵州茅台 / 600519.SH")
+    val_p.add_argument("--year", default="", help="财报年份，默认自动识别最新年报")
+    val_p.add_argument("--no-save", action="store_true", help="不写入 docs/valuation/")
+    val_p.add_argument(
+        "--compare",
+        action="store_true",
+        help="附加实时网络对比分析（同业/新闻）",
+    )
+
+    cmp_p = sub.add_parser("compare", help="爬取网络资源，实时对比分析")
+    cmp_p.add_argument("target", nargs="?", default="", help="公司名或代码")
+    cmp_p.add_argument(
+        "--watchlist",
+        action="store_true",
+        help="对比监控列表（FINANCIAL_POC_AGENT_WATCHLIST）",
+    )
+    cmp_p.add_argument(
+        "--no-valuation",
+        action="store_true",
+        help="不做财报估值，仅网络实时对比",
+    )
+    cmp_p.add_argument("--no-save", action="store_true", help="不写入 docs/comparison/")
+
+    ana_p = sub.add_parser(
+        "analyze",
+        help="一键全分析：导入财报→关键词→网络对比→高估/低估结论",
+    )
+    ana_p.add_argument(
+        "target",
+        nargs="?",
+        default="",
+        help="PDF 路径或公司名；省略则分析 data/raw/pdf/ 下全部 PDF",
+    )
+    ana_p.add_argument("--no-save", action="store_true", help="不写入 docs/analysis/")
+
     return parser.parse_args()
 
 
@@ -216,20 +476,8 @@ def main() -> None:
     command = args.command
 
     if command is None:
-        parser = argparse.ArgumentParser(
-            description="Financial Agent：PDF 财报 + 财经新闻"
-        )
-        sub = parser.add_subparsers(dest="command")
-        sub.add_parser("sync")
-        sub.add_parser("pdf")
-        sub.add_parser("query")
-        sub.add_parser("ask")
-        sub.add_parser("daily")
-        sub.add_parser("run")
-        sub.add_parser("serve")
-        sub.add_parser("schedule")
-        parser.print_help()
-        sys.exit(1)
+        _run_interactive_query(agent)
+        return
 
     if command == "sync":
         payload = agent.sync(
@@ -247,10 +495,25 @@ def main() -> None:
         if payload.get("failed"):
             for item in payload["failed"]:
                 print(f"  失败: {item.get('file')} - {item.get('reason')}")
+        if payload.get("success") and args.valuate:
+            entities = payload.get("entities") or []
+            if not entities:
+                print("\n未识别到实体，跳过估值分析。")
+            else:
+                print(f"\n开始估值分析（共 {len(entities)} 家公司）...")
+                for ent in entities:
+                    try:
+                        result = agent.valuate(ent["entity_name"])
+                        _print_valuation(result)
+                    except Exception as exc:
+                        print(f"\n  {ent.get('entity_name')} 估值失败: {exc}")
         sys.exit(0 if payload.get("success") else 1)
 
     if command == "query":
         top_k = args.top_k or None
+        if not args.question:
+            _run_interactive_query(agent, top_k=top_k)
+            return
         payload = agent.query(args.question, top_k=top_k)
         _print_query(payload)
         return
@@ -338,6 +601,47 @@ def main() -> None:
         )
         _print_daily(ctx)
         sys.exit(0 if ctx.success else 1)
+
+    if command == "analyze":
+        try:
+            target = args.target.strip() or None
+            results = agent.analyze(target, save_report=not args.no_save)
+            _print_full_analysis(results)
+        except Exception as exc:
+            print(f"\n全量分析失败: {exc}")
+            sys.exit(1)
+        return
+
+    if command == "valuate":
+        try:
+            result = agent.valuate(
+                args.target,
+                report_year=args.year.strip() or None,
+                save_report=not args.no_save,
+                compare=getattr(args, "compare", False),
+            )
+            _print_valuation(result)
+            comparison = getattr(result, "comparison", None)
+            if comparison is not None:
+                _print_comparison(comparison)
+        except Exception as exc:
+            print(f"\n估值分析失败: {exc}")
+            sys.exit(1)
+        return
+
+    if command == "compare":
+        try:
+            result = agent.compare(
+                args.target,
+                watchlist=args.watchlist,
+                include_valuation=not args.no_valuation,
+                save_report=not args.no_save,
+            )
+            _print_comparison(result)
+        except Exception as exc:
+            print(f"\n实时对比分析失败: {exc}")
+            sys.exit(1)
+        return
 
     if command == "schedule":
         if args.now:

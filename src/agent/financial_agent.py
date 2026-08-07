@@ -244,6 +244,83 @@ class FinancialAgent:
             skip_index=skip_index,
         )
 
+    def valuate(
+        self,
+        query: str,
+        *,
+        report_year: str | None = None,
+        save_report: bool = True,
+        compare: bool = False,
+    ):
+        """基于财报 + 实时行情，输出高估/合理/低估结论。"""
+        from src.analysis.valuation import analyze_valuation
+
+        result = analyze_valuation(
+            query,
+            self.engine,  # type: ignore[arg-type]
+            report_year=report_year,
+            save_report=save_report,
+        )
+        if compare:
+            from src.analysis.market_compare import analyze_market_comparison
+
+            result.comparison = analyze_market_comparison(  # type: ignore[attr-defined]
+                query,
+                self.engine,  # type: ignore[arg-type]
+                include_valuation=False,
+                save_report=True,
+            )
+        return result
+
+    def compare(
+        self,
+        query: str = "",
+        *,
+        watchlist: bool = False,
+        include_valuation: bool = True,
+        save_report: bool = True,
+    ):
+        """爬取网络资源，实时对比分析（同业 + 监控列表 + 新闻）。"""
+        from src.analysis.market_compare import (
+            analyze_market_comparison,
+            analyze_watchlist_comparison,
+        )
+
+        if watchlist:
+            return analyze_watchlist_comparison(
+                self.engine,  # type: ignore[arg-type]
+                save_report=save_report,
+            )
+        if not query.strip():
+            raise ValueError("请指定公司名/代码，或使用 --watchlist")
+        return analyze_market_comparison(
+            query,
+            self.engine,  # type: ignore[arg-type]
+            include_valuation=include_valuation,
+            save_report=save_report,
+        )
+
+    def analyze(
+        self,
+        target: str | Path | None = None,
+        *,
+        save_report: bool = True,
+    ):
+        """
+        一键全量分析 Agent：
+        导入财报 → 抽取指标/关键词 → 爬取网络 → 对比股价 → 高估/低估结论。
+
+        target: PDF 路径 / 公司名 / None=处理 data/raw/pdf/ 下全部 PDF
+        """
+        from src.analysis.full_report import run_full_analysis
+
+        return run_full_analysis(
+            self.engine,  # type: ignore[arg-type]
+            self.process_pdfs,
+            target,
+            save_report=save_report,
+        )
+
 
 def create_financial_agent(**kwargs: Any) -> FinancialAgent:
     """创建 Financial Agent 实例。"""

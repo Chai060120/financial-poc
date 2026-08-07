@@ -11240,9 +11240,10 @@
   },
   {
     "entity_id": "300125.SZ",
-    "entity_name": "*ST聆达",
+    "entity_name": "聆达股份",
     "aliases": [
-      "*ST聆达"
+      "*ST聆达",
+      "聆达股份"
     ]
   },
   {
@@ -20257,6 +20258,13 @@
     ]
   },
   {
+    "entity_id": "301707.SZ",
+    "entity_name": "N展芯股份",
+    "aliases": [
+      "N展芯股份"
+    ]
+  },
+  {
     "entity_id": "302132.SZ",
     "entity_name": "中航成飞",
     "aliases": [
@@ -20570,8 +20578,9 @@
   },
   {
     "entity_id": "600060.SH",
-    "entity_name": "海信视像",
+    "entity_name": "XD海信视",
     "aliases": [
+      "XD海信视",
       "海信视像"
     ]
   },
@@ -20780,8 +20789,9 @@
   },
   {
     "entity_id": "600104.SH",
-    "entity_name": "上汽集团",
+    "entity_name": "XD上汽集",
     "aliases": [
+      "XD上汽集",
       "上汽集团"
     ]
   },
@@ -23122,7 +23132,7 @@
   },
   {
     "entity_id": "600558.SH",
-    "entity_name": "XD大西洋",
+    "entity_name": "大西洋",
     "aliases": [
       "XD大西洋",
       "大西洋"
@@ -23524,8 +23534,9 @@
   },
   {
     "entity_id": "600623.SH",
-    "entity_name": "华谊集团",
+    "entity_name": "XD华谊集",
     "aliases": [
+      "XD华谊集",
       "华谊集团"
     ]
   },
@@ -24745,8 +24756,9 @@
   },
   {
     "entity_id": "600839.SH",
-    "entity_name": "四川长虹",
+    "entity_name": "XD四川长",
     "aliases": [
+      "XD四川长",
       "四川长虹"
     ]
   },
@@ -25027,8 +25039,9 @@
   },
   {
     "entity_id": "600886.SH",
-    "entity_name": "国投电力",
+    "entity_name": "XD国投电",
     "aliases": [
+      "XD国投电",
       "国投电力"
     ]
   },
@@ -26199,8 +26212,9 @@
   },
   {
     "entity_id": "601336.SH",
-    "entity_name": "新华保险",
+    "entity_name": "XD新华保",
     "aliases": [
+      "XD新华保",
       "新华保险"
     ]
   },
@@ -26332,8 +26346,9 @@
   },
   {
     "entity_id": "601555.SH",
-    "entity_name": "东吴证券",
+    "entity_name": "XD东吴证",
     "aliases": [
+      "XD东吴证",
       "东吴证券"
     ]
   },
@@ -26906,8 +26921,9 @@
   },
   {
     "entity_id": "601918.SH",
-    "entity_name": "新集能源",
+    "entity_name": "XD新集能",
     "aliases": [
+      "XD新集能",
       "新集能源"
     ]
   },
@@ -26976,7 +26992,7 @@
   },
   {
     "entity_id": "601958.SH",
-    "entity_name": "XD金钼股",
+    "entity_name": "金钼股份",
     "aliases": [
       "XD金钼股",
       "金钼股份"
@@ -29479,8 +29495,9 @@
   },
   {
     "entity_id": "603468.SH",
-    "entity_name": "N津富",
+    "entity_name": "C津富",
     "aliases": [
+      "C津富",
       "N津富"
     ]
   },
@@ -30795,7 +30812,7 @@
   },
   {
     "entity_id": "603858.SH",
-    "entity_name": "XD步长制",
+    "entity_name": "步长制药",
     "aliases": [
       "XD步长制",
       "步长制药"
@@ -33334,8 +33351,9 @@
   },
   {
     "entity_id": "688187.SH",
-    "entity_name": "时代电气",
+    "entity_name": "XD时代电",
     "aliases": [
+      "XD时代电",
       "时代电气"
     ]
   },
@@ -34692,8 +34710,9 @@
   },
   {
     "entity_id": "688425.SH",
-    "entity_name": "铁建重工",
+    "entity_name": "XD铁建重",
     "aliases": [
+      "XD铁建重",
       "铁建重工"
     ]
   },
@@ -34923,7 +34942,7 @@
   },
   {
     "entity_id": "688501.SH",
-    "entity_name": "DR青达环",
+    "entity_name": "青达环保",
     "aliases": [
       "DR青达环",
       "青达环保"
@@ -35561,7 +35580,7 @@
   },
   {
     "entity_id": "688613.SH",
-    "entity_name": "XD奥精医",
+    "entity_name": "奥精医疗",
     "aliases": [
       "XD奥精医",
       "奥精医疗"
@@ -36475,8 +36494,9 @@
   },
   {
     "entity_id": "689009.SH",
-    "entity_name": "九号公司",
+    "entity_name": "XD九号公",
     "aliases": [
+      "XD九号公",
       "九号公司"
     ]
   },

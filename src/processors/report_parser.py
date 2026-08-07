@@ -35,12 +35,16 @@ SECTION_BALANCE_SHEET = "资产负债表"
 SECTION_CASH_FLOW = "现金流量表"
 SECTION_MANAGEMENT_DISCUSSION = "管理层讨论"
 SECTION_RISK = "风险提示"
+SECTION_QUARTERLY = "分季度财务"
+SECTION_ACCOUNTING_SUMMARY = "主要会计数据"
 SECTION_OTHER = "其他"
 
 KNOWN_SECTIONS: tuple[str, ...] = (
     SECTION_INCOME_STATEMENT,
     SECTION_BALANCE_SHEET,
     SECTION_CASH_FLOW,
+    SECTION_ACCOUNTING_SUMMARY,
+    SECTION_QUARTERLY,
     SECTION_MANAGEMENT_DISCUSSION,
     SECTION_RISK,
 )
@@ -51,6 +55,17 @@ FINANCIAL_STATEMENT_SECTIONS: frozenset[str] = frozenset(
 
 # 章节识别规则（按优先级排序，先匹配更具体的）
 SECTION_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        SECTION_QUARTERLY,
+        re.compile(r"分季度主要财务数据|分季度.*?主要财务|季度主要财务数据"),
+    ),
+    (
+        SECTION_ACCOUNTING_SUMMARY,
+        re.compile(
+            r"主要会计数据和财务指标|近三年主要会计数据|"
+            r"主要会计数据|主要财务指标摘要"
+        ),
+    ),
     (
         SECTION_RISK,
         re.compile(

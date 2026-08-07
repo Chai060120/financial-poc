@@ -309,6 +309,7 @@ def run_incremental_pdfs(
     all_tokens: list[Token] = []
     succeeded: list[Path] = []
     failed: list[dict[str, str]] = []
+    entities: dict[str, str] = {}
 
     for pdf_path in paths:
         try:
@@ -318,6 +319,12 @@ def run_incremental_pdfs(
                 continue
             all_tokens.extend(tokens)
             succeeded.append(pdf_path)
+            for token in tokens:
+                meta = token.get("metadata") or {}
+                entity_id = str(meta.get("entity_id") or "").strip()
+                entity_name = str(meta.get("entity_name") or "").strip()
+                if entity_id and entity_name and entity_id != "UNKNOWN":
+                    entities[entity_id] = entity_name
         except Exception as exc:
             logger.exception("PDF 处理失败: %s", pdf_path.name)
             failed.append({"file": pdf_path.name, "reason": str(exc)})
@@ -340,6 +347,10 @@ def run_incremental_pdfs(
         "tokens_json": str(json_path),
         "unified_csv": str(csv_path),
         "failed": failed,
+        "entities": [
+            {"entity_id": entity_id, "entity_name": entity_name}
+            for entity_id, entity_name in entities.items()
+        ],
     }
 
     if build_index:

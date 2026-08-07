@@ -32,7 +32,12 @@ from src.embeddings.text_embedding import TextEmbedder
 from src.utils.query_filters import (
     describe_retrieval_mode,
     enhance_retrieval_query,
+    asks_full_year_period,
     resolve_entity_filters,
+)
+from src.utils.retrieval_postprocess import (
+    full_year_fetch_size,
+    postprocess_retrieval_results,
 )
 from src.vectorstore.chroma_store import ChromaStore
 from src.vectorstore.hybrid_retrieval import (
@@ -204,8 +209,11 @@ class UnifiedRetrievalEngine:
         use_hybrid = self.enable_hybrid if hybrid is None else hybrid
         use_rerank = self.enable_rerank if rerank is None else rerank
 
+        user_question = question.strip()
+        full_year_query = asks_full_year_period(user_question)
+
         filters, retrieval_query, auto_applied = self.resolve_filters(
-            question,
+            user_question,
             entity_name=entity_name,
             entity_id=entity_id,
             source=source,
@@ -227,18 +235,22 @@ class UnifiedRetrievalEngine:
         if auto_applied and filters.entity_name:
             logger.info("自动识别实体过滤: %s", filters.entity_name)
 
+        fetch_k = full_year_fetch_size(final_k) if full_year_query else final_k
+        if full_year_query and fetch_k > final_k:
+            logger.info("全年口径问句: 候选 %d → 后处理 Top %d", fetch_k, final_k)
+
         try:
             if use_hybrid:
                 results = self._hybrid.retrieve(
                     retrieval_query,
-                    top_k=final_k,
+                    top_k=fetch_k,
                     where=chroma_where,
                     rerank=use_rerank,
                 )
             else:
                 results = self._vector.retrieve(
                     retrieval_query,
-                    top_k=final_k,
+                    top_k=fetch_k,
                     rerank=use_rerank,
                     where=chroma_where,
                 )
@@ -246,6 +258,12 @@ class UnifiedRetrievalEngine:
             raise
         except Exception as exc:
             raise RetrievalError(f"统一检索失败: {exc}") from exc
+
+        results = postprocess_retrieval_results(
+            user_question,
+            results,
+            top_k=final_k,
+        )
 
         logger.info("Unified 检索完成: mode=%s, count=%d", mode, len(results))
         return results

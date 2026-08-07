@@ -23,6 +23,7 @@ from config import (
     add_project_root_to_path,
     setup_logging,
 )
+from src.utils.query_insights import build_query_insight, format_query_insight, mark_insight_source
 from src.utils.source_display import format_reference_meta, source_type_label
 from src.vectorstore.retrieval import RetrievalError, RetrievalResult
 from src.vectorstore.unified_retrieval import UnifiedRetrievalEngine, create_retrieval_engine
@@ -102,11 +103,19 @@ def print_results(
 ) -> None:
     print(f"\n问题: {question}")
     print(f"模式: {mode_label}")
-    print(f"命中 {len(results)} 条结果（按 score 降序）:\n")
+
+    serialized = [{"text": item["text"], "metadata": item["metadata"]} for item in results]
+    insight = build_query_insight(question, serialized)
+    if insight:
+        print(format_query_insight(insight))
+
+    print(f"命中 {len(results)} 条原文:\n")
 
     if not results:
         print("未检索到相关 Token，请先运行: python scripts/03_build_index.py")
         return
+
+    insight_ranks = {m.source_rank for m in insight.metrics} if insight else set()
 
     for index, item in enumerate(results, start=1):
         meta = item["metadata"]
@@ -115,8 +124,9 @@ def print_results(
         rerank_score = item.get("rerank_score")
         text = item["text"]
         source = str(meta.get("source") or "")
+        tag = mark_insight_source(index, insight)
 
-        print(f"--- [{index}] {source_type_label(source)} ---")
+        print(f"--- [{index}] {source_type_label(source)}{tag} ---")
         for part in format_reference_meta(meta):
             print(f"  {part}")
         print(f"  chunk_index: {chunk_index}")
@@ -143,7 +153,19 @@ def print_results(
         if rerank_score is not None:
             print(f"  rerank_score: {rerank_score:.4f}")
 
-        print(f"  text: {text}")
+        if insight and index in insight_ranks:
+            snippet = next(
+                (m.snippet for m in insight.metrics if m.source_rank == index and m.snippet),
+                "",
+            )
+            if snippet:
+                print("  关键片段:")
+                for line in snippet.splitlines():
+                    print(f"  {line}")
+            else:
+                print(f"  text: {text[:200]}")
+        else:
+            print(f"  text: {text[:200]}")
         print()
 
 

@@ -14,7 +14,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from config import EMBEDDING_MODEL, setup_logging
+from config import EMBEDDING_MODEL, HF_OFFLINE, setup_logging
 
 logger = setup_logging(__name__)
 
@@ -62,7 +62,16 @@ class TextEmbedder:
         self.device = _resolve_device()
 
         logger.info("加载 Embedding 模型: %s | device=%s", self.model_name, self.device)
-        self._model = SentenceTransformer(self.model_name, device=self.device)
+        load_kwargs: dict = {"device": self.device}
+        if HF_OFFLINE:
+            load_kwargs["local_files_only"] = True
+        try:
+            self._model = SentenceTransformer(self.model_name, **load_kwargs)
+        except Exception as exc:
+            if not HF_OFFLINE:
+                raise
+            logger.warning("离线加载失败 (%s)，尝试联网下载...", exc)
+            self._model = SentenceTransformer(self.model_name, device=self.device)
 
         self.embedding_dim = (
             self._model.get_embedding_dimension()

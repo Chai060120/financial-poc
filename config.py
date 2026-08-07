@@ -12,6 +12,13 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
+except ImportError:
+    pass
+
 # ---------------------------------------------------------------------------
 # 项目根目录
 # ---------------------------------------------------------------------------
@@ -95,6 +102,25 @@ RERANK_MODEL: str = os.getenv(
 )
 RETRIEVAL_TOP_K: int = int(os.getenv("FINANCIAL_POC_RETRIEVAL_TOP_K", "20"))
 RERANK_TOP_K: int = int(os.getenv("FINANCIAL_POC_RERANK_TOP_K", "5"))
+
+# HuggingFace 模型加载：默认离线（仅用本地缓存，避免启动时连 huggingface.co 超时）
+HF_OFFLINE: bool = os.getenv("FINANCIAL_POC_HF_OFFLINE", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
+
+
+def apply_hf_offline_env() -> None:
+    """启动前设置 HF 离线环境变量，跳远程 HEAD/版本检查。"""
+    if not HF_OFFLINE:
+        return
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+
+
+apply_hf_offline_env()
 
 # Hybrid Retrieval（Embedding + BM25 + RRF）
 HYBRID_EMBEDDING_WEIGHT: float = float(
@@ -281,6 +307,8 @@ __all__ = [
     "RERANK_MODEL",
     "RETRIEVAL_TOP_K",
     "RERANK_TOP_K",
+    "HF_OFFLINE",
+    "apply_hf_offline_env",
     "HYBRID_EMBEDDING_WEIGHT",
     "HYBRID_BM25_WEIGHT",
     "HYBRID_RRF_K",

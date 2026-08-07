@@ -1,0 +1,74 @@
+{
+  "news_em:600519": {
+    "ts": 1786086085.8255882,
+    "data": [
+      {
+        "title": "8只个股大宗交易超5000万元",
+        "url": "http://finance.eastmoney.com/a/202608033829918487.html",
+        "publish_time": "2026-08-03 18:43:00"
+      },
+      {
+        "title": "白酒概念下跌0.18%，5股主力资金净流出超5000万元",
+        "url": "http://finance.eastmoney.com/a/202608053832892650.html",
+        "publish_time": "2026-08-05 22:04:00"
+      },
+      {
+        "title": "食品饮料行业今日跌1.07%，主力资金净流出11.52亿元",
+        "url": "http://finance.eastmoney.com/a/202608053832636658.html",
+        "publish_time": "2026-08-05 16:55:00"
+      },
+      {
+        "title": "主力动向：8月5日特大单净流入520.08亿元",
+        "url": "http://finance.eastmoney.com/a/202608053832637776.html",
+        "publish_time": "2026-08-05 16:55:00"
+      },
+      {
+        "title": "食品饮料行业今日跌1.71%，主力资金净流出15.57亿元",
+        "url": "http://finance.eastmoney.com/a/202608043831237316.html",
+        "publish_time": "2026-08-04 16:49:00"
+      }
+    ]
+  },
+  "peers:白酒:600519:3": {
+    "ts": 1786085170.265461,
+    "data": []
+  },
+  "peers:白酒Ⅱ:600519:8": {
+    "ts": 1786085216.6415298,
+    "data": []
+  },
+  "peers:银行Ⅱ:600036:8": {
+    "ts": 1786085967.5767076,
+    "data": []
+  },
+  "news_em:600036": {
+    "ts": 1786085986.732782,
+    "data": [
+      {
+        "title": "600036，市值重回万亿元",
+        "url": "http://finance.eastmoney.com/a/202607293825077444.html",
+        "publish_time": "2026-07-29 15:26:00"
+      },
+      {
+        "title": "招商银行600036.SH)：王小青行长任职资格获核准",
+        "url": "http://finance.eastmoney.com/a/202607283823566132.html",
+        "publish_time": "2026-07-28 17:08:44"
+      },
+      {
+        "title": "分红季|每股现金红利人民币1.003元！红利低波成分股招商银行（600036.SH），发布2025年年度A股分红派息实施公告！",
+        "url": "http://finance.eastmoney.com/a/202607063794998783.html",
+        "publish_time": "2026-07-06 13:22:14"
+      },
+      {
+        "title": "8只个股大宗交易超5000万元",
+        "url": "http://finance.eastmoney.com/a/202608033829918487.html",
+        "publish_time": "2026-08-03 18:43:00"
+      },
+      {
+        "title": "上红低波指数上涨0.27%，平安上证红利低波动指数A近3个月超越基准年化收益为10.70%",
+        "url": "http://finance.eastmoney.com/a/202608043831200477.html",
+        "publish_time": "2026-08-04 09:17:53"
+      }
+    ]
+  }
+}
