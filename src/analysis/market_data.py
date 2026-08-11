@@ -101,6 +101,31 @@ def _http_get(url: str, *, params: dict | None = None, headers: dict | None = No
     return response.text
 
 
+def _normalize_price(raw: float | None) -> float | None:
+    if raw is None or raw <= 0:
+        return None
+    if raw > 1000:
+        return round(raw / 100.0, 2)
+    return round(raw, 2)
+
+
+def _normalize_ratio(raw: float | None) -> float | None:
+    """PE/PB 字段：东财有时放大了 100 倍，有时是直接值。"""
+    if raw is None or raw <= 0:
+        return None
+    if raw > 500:
+        return round(raw / 100.0, 2)
+    return round(raw, 2)
+
+
+def _pick_ratio(*values: object) -> float | None:
+    for value in values:
+        parsed = _normalize_ratio(_to_float(value))
+        if parsed is not None and parsed > 0:
+            return parsed
+    return None
+
+
 def _fetch_eastmoney_quote(code: str, snapshot: MarketSnapshot) -> bool:
     """东方财富单股接口（轻量，不拉全市场）。"""
     try:
@@ -108,7 +133,7 @@ def _fetch_eastmoney_quote(code: str, snapshot: MarketSnapshot) -> bool:
             "https://push2.eastmoney.com/api/qt/stock/get",
             params={
                 "secid": _secid(code),
-                "fields": "f43,f58,f127,f162,f167,f116,f170",
+                "fields": "f43,f58,f127,f9,f23,f162,f167,f116,f170",
                 "ut": "fa5fd1943c7b386f172d6893dbfba10b",
             },
         )
@@ -131,28 +156,22 @@ def _fetch_eastmoney_quote(code: str, snapshot: MarketSnapshot) -> bool:
     if name:
         snapshot.entity_name = name
 
-    price_raw = _to_float(data.get("f43"))
-    if price_raw is not None and price_raw > 0:
-        snapshot.price = round(price_raw / 100.0, 2)
-
-    pe_raw = _to_float(data.get("f162"))
-    if pe_raw is not None and pe_raw > 0:
-        snapshot.pe_ttm = round(pe_raw / 100.0, 2)
-
-    pb_raw = _to_float(data.get("f167"))
-    if pb_raw is not None and pb_raw > 0:
-        snapshot.pb = round(pb_raw / 100.0, 2)
+    snapshot.price = snapshot.price or _normalize_price(_to_float(data.get("f43")))
+    snapshot.pe_ttm = snapshot.pe_ttm or _pick_ratio(
+        data.get("f162"), data.get("f9"), data.get("f115")
+    )
+    snapshot.pb = snapshot.pb or _pick_ratio(data.get("f167"), data.get("f23"))
 
     cap_raw = _to_float(data.get("f116"))
     if cap_raw is not None:
         snapshot.market_cap = cap_raw
 
     if snapshot.price is not None:
-        snapshot.price_source = "eastmoney:quote"
+        snapshot.price_source = snapshot.price_source or "eastmoney:quote"
     if snapshot.pe_ttm is not None:
-        snapshot.pe_source = "eastmoney:quote"
+        snapshot.pe_source = snapshot.pe_source or "eastmoney:quote"
     if snapshot.pb is not None:
-        snapshot.pb_source = "eastmoney:quote"
+        snapshot.pb_source = snapshot.pb_source or "eastmoney:quote"
 
     industry = str(data.get("f127") or "").strip()
     if industry and industry not in {"-", "--"}:
@@ -163,7 +182,7 @@ def _fetch_eastmoney_quote(code: str, snapshot: MarketSnapshot) -> bool:
         snapshot.change_pct = change / 100.0 if abs(change) > 50 else change
 
     if snapshot.price or snapshot.pe_ttm or snapshot.pb:
-        snapshot.source = "eastmoney:quote"
+        snapshot.source = snapshot.source or "eastmoney:quote"
         return True
     return False
 
@@ -284,6 +303,101 @@ def _fetch_from_hist(ak, code: str, snapshot: MarketSnapshot) -> bool:
     return False
 
 
+def _fetch_from_individual_info_em(ak, code: str, snapshot: MarketSnapshot) -> bool:
+    """东方财富个股资料页（单股轻量，补 PE/PB/EPS）。"""
+    if snapshot.pe_ttm and snapshot.pb:
+        return False
+    try:
+        info = ak.stock_individual_info_em(symbol=code)
+    except Exception as exc:
+        logger.debug("个股资料接口失败: %s", exc)
+        return False
+    if info is None or info.empty:
+        return False
+
+    mapping = dict(
+        zip(
+            info["item"].astype(str).str.strip(),
+            info["value"].astype(str).str.strip(),
+            strict=False,
+        )
+    )
+    updated = False
+    if snapshot.pe_ttm is None:
+        pe = _pick_ratio(
+            mapping.get("市盈率-动态"),
+            mapping.get("市盈率"),
+            mapping.get("PE(TTM)"),
+        )
+        if pe is not None:
+            snapshot.pe_ttm = pe
+            snapshot.pe_source = "akshare:individual_info_em"
+            updated = True
+    if snapshot.pb is None:
+        pb = _pick_ratio(mapping.get("市净率"), mapping.get("PB"))
+        if pb is not None:
+            snapshot.pb = pb
+            snapshot.pb_source = "akshare:individual_info_em"
+            updated = True
+    if updated:
+        snapshot.source = snapshot.source or "akshare:individual_info_em"
+    return updated
+
+
+def _network_eps_from_info_em(code: str) -> float | None:
+    """从东财资料页读取每股收益，用于无财报时的 PE 推算。"""
+    try:
+        import akshare as ak
+    except ImportError:
+        return None
+    try:
+        with _without_proxy():
+            info = ak.stock_individual_info_em(symbol=code)
+    except Exception:
+        return None
+    if info is None or info.empty:
+        return None
+    mapping = dict(
+        zip(
+            info["item"].astype(str).str.strip(),
+            info["value"].astype(str).str.strip(),
+            strict=False,
+        )
+    )
+    for key in ("每股收益", "基本每股收益", "EPS"):
+        eps = _to_float(mapping.get(key))
+        if eps is not None and eps > 0:
+            return eps
+    return None
+
+
+def _network_bvps_from_info_em(code: str) -> float | None:
+    """从东财资料页读取每股净资产，用于无财报时的 PB 推算。"""
+    try:
+        import akshare as ak
+    except ImportError:
+        return None
+    try:
+        with _without_proxy():
+            info = ak.stock_individual_info_em(symbol=code)
+    except Exception:
+        return None
+    if info is None or info.empty:
+        return None
+    mapping = dict(
+        zip(
+            info["item"].astype(str).str.strip(),
+            info["value"].astype(str).str.strip(),
+            strict=False,
+        )
+    )
+    for key in ("每股净资产", "每股净资产(元)", "BVPS"):
+        bvps = _to_float(mapping.get(key))
+        if bvps is not None and bvps > 0:
+            return bvps
+    return None
+
+
 def _fetch_industry(ak, code: str, snapshot: MarketSnapshot) -> None:
     if snapshot.industry:
         return
@@ -350,6 +464,7 @@ def fetch_market_snapshot(entity_id: str, entity_name: str = "") -> MarketSnapsh
         if ak is not None:
             for fetcher in (
                 lambda: _fetch_from_individual_spot(ak, code, snapshot),
+                lambda: _fetch_from_individual_info_em(ak, code, snapshot),
                 lambda: _fetch_from_spot_em(ak, code, snapshot),
                 lambda: _fetch_from_hist(ak, code, snapshot),
             ):
@@ -367,4 +482,33 @@ def fetch_market_snapshot(entity_id: str, entity_name: str = "") -> MarketSnapsh
             ", ".join(errors[:3]) if errors else "全部数据源",
         )
 
+    return snapshot
+
+
+def fetch_market_snapshot_enriched(
+    entity_id: str,
+    entity_name: str = "",
+    fundamentals: dict | None = None,
+) -> MarketSnapshot:
+    """拉取行情；缺 PE/PB 时用财报 EPS/BVPS 与现价推算。"""
+    snapshot = fetch_market_snapshot(entity_id, entity_name)
+    fund = dict(fundamentals or {})
+    if _fundamental_scalar(fund, "eps") is None:
+        code = _symbol_from_entity_id(entity_id)
+        eps = _network_eps_from_info_em(code)
+        if eps is not None:
+            fund.setdefault(
+                "eps",
+                {"raw": str(eps), "display": f"{eps:.2f} 元/股", "source": "network"},
+            )
+    if _fundamental_scalar(fund, "bvps") is None:
+        code = _symbol_from_entity_id(entity_id)
+        bvps = _network_bvps_from_info_em(code)
+        if bvps is not None:
+            fund.setdefault(
+                "bvps",
+                {"raw": str(bvps), "display": f"{bvps:.2f} 元/股", "source": "network"},
+            )
+    if fund:
+        snapshot = enrich_market_from_fundamentals(snapshot, fund)
     return snapshot

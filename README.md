@@ -18,27 +18,18 @@ pip install -r requirements.txt
 PDF 放入 `data/raw/pdf/`，然后：
 
 ```powershell
-python scripts/agent.py sync
-python scripts/agent.py          # 进入交互检索（演示用这一条即可）
+python scripts/agent.py
 ```
 
----
+进入 **对话式 Agent**，支持：
+- 丢 PDF / 说公司名 → 全量分析（高估/合理/低估）
+- 问具体指标 → 财报检索
+- 多轮追问 → 「为什么？」「和招行比呢？」
 
-## 一键全分析（推荐）
-
-把财报 PDF 放入 `data/raw/pdf/`，然后：
+单次分析（不进入对话）：
 
 ```powershell
 python scripts/agent.py analyze
-```
-
-自动完成：**解析财报 → 抽取指标/关键词 → 爬取网络新闻与股价 → 同业对比 → 输出高估/合理/低估**。
-
-报告保存至 `docs/analysis/`。
-
-```powershell
-python scripts/agent.py analyze 贵州茅台2024年报.pdf   # 指定 PDF
-python scripts/agent.py analyze 贵州茅台                 # 已入库公司，跳过 PDF 处理
 ```
 
 ---
@@ -47,18 +38,10 @@ python scripts/agent.py analyze 贵州茅台                 # 已入库公司�
 
 | 命令 | 作用 |
 |------|------|
-| **`python scripts/agent.py analyze`** | **一键全分析（推荐）** |
-| `python scripts/agent.py` | 交互检索演示 |
-| `python scripts/agent.py sync` | 抓新闻 + 处理 PDF + 建索引 |
-| `python scripts/agent.py query "贵州茅台2024年净利润"` | 单次检索 |
-| `python scripts/agent.py pdf --valuate` | 导入 PDF 后自动输出估值结论 |
-| `python scripts/agent.py compare 贵州茅台` | 爬取网络行情/新闻，实时同业对比 |
-| `python scripts/agent.py compare --watchlist` | 监控列表批量实时对比 |
-| `python scripts/agent.py valuate 贵州茅台 --compare` | 财报估值 + 实时网络对比 |
-| `python scripts/agent.py daily` | 生成规则化日报 → `docs/daily/` |
-| `python scripts/agent.py pdf` | 仅处理新 PDF |
-| `python scripts/agent.py ask "..."` | RAG 问答（需 API Key） |
-| `python scripts/agent.py run` | 自主跑一轮（含 LLM 简报，需 API Key） |
+| **`python scripts/agent.py`** | **对话式 Agent（推荐）** |
+| `python scripts/agent.py analyze` | 单次全量分析 |
+| `python scripts/agent.py query "..."` | 单次财报检索 |
+| `python scripts/agent.py sync --skip-fetch` | 同步本地 PDF/新闻到索引 |
 
 ```powershell
 python scripts/agent.py sync --skip-fetch    # 跳过抓新闻，用本地数据

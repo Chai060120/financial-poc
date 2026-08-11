@@ -22,7 +22,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config import DEFAULT_ENCODING, REFERENCE_DIR, setup_logging
-from src.analysis.market_data import MarketSnapshot, _without_proxy, fetch_market_snapshot
+from src.analysis.market_data import MarketSnapshot, _without_proxy, fetch_market_snapshot_enriched
 
 logger = setup_logging(__name__)
 
@@ -274,12 +274,13 @@ def fetch_peer_quotes(
         entity_id = _entity_id_from_code(code)
         cache_key = f"quote:{entity_id}"
         cached = _cache_get(cache_key)
-        if cached:
+        if cached and (cached.get("pe_ttm") or cached.get("pb")):
             quotes.append(PeerQuote(**cached))
             continue
-        snapshot = fetch_market_snapshot(entity_id, name)
+        snapshot = fetch_market_snapshot_enriched(entity_id, name)
         peer = snapshot_to_peer(snapshot)
-        _cache_set(cache_key, asdict(peer))
+        if peer.pe_ttm or peer.pb:
+            _cache_set(cache_key, asdict(peer))
         quotes.append(peer)
     return quotes
 
@@ -288,6 +289,6 @@ def fetch_watchlist_quotes(entity_ids: list[str]) -> list[PeerQuote]:
     """监控列表批量实时报价。"""
     quotes: list[PeerQuote] = []
     for entity_id in entity_ids:
-        snapshot = fetch_market_snapshot(entity_id)
+        snapshot = fetch_market_snapshot_enriched(entity_id)
         quotes.append(snapshot_to_peer(snapshot))
     return quotes

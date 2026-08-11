@@ -66,6 +66,8 @@ class FullAnalysisResult:
     final_verdict: str = "合理"
     final_score: float = 0.0
     final_confidence: str = "中"
+    data_warnings: list[str] = field(default_factory=list)
+    valuation_reliable: bool = True
     executive_summary: str = ""
     synthesis_reasons: list[str] = field(default_factory=list)
     pdf_source: str = ""
@@ -97,10 +99,19 @@ def extract_keywords(
     """从财报检索结果与网络新闻中提取关键词。"""
     found: set[str] = set()
 
-    for item in fundamentals.values():
+    _SKIP_KEYWORD_KEYS = frozenset({
+        "report_year", "report_type", "period_label",
+        "revenue_growth_pct", "profit_growth_pct", "peg",
+        "revenue", "net_profit", "attributable_profit", "eps", "bvps", "roe",
+        "operating_profit", "total_assets", "total_equity", "cash_flow_operating",
+    })
+
+    for key, item in fundamentals.items():
+        if key in _SKIP_KEYWORD_KEYS:
+            continue
         if isinstance(item, dict):
             label = str(item.get("label") or "").strip()
-            if label and label not in {"report_year", "report_type"}:
+            if label:
                 found.add(label)
 
     report_text = _retrieve_text(
@@ -132,6 +143,15 @@ def synthesize_final_verdict(
     """综合财报估值 + 网络对比 + 新闻情绪 → 最终高估/合理/低估。"""
     reasons: list[str] = []
     score = valuation.score
+
+    if not getattr(valuation, "data_reliable", True):
+        return (
+            "无法可靠判断估值",
+            0.0,
+            "低",
+            ["财务指标或估值数据质量不足，无法给出可靠结论"]
+            + list(getattr(valuation, "warnings", []) or [])[:4],
+        )
 
     rel = comparison.relative_verdict or ""
     if "偏贵" in rel:
@@ -310,6 +330,8 @@ def analyze_entity_full(
         final_confidence=confidence,
         synthesis_reasons=reasons,
         pdf_source=pdf_source,
+        data_warnings=list(getattr(valuation, "warnings", []) or []),
+        valuation_reliable=getattr(valuation, "data_reliable", True),
     )
     result.executive_summary = _build_executive_summary(result)
 

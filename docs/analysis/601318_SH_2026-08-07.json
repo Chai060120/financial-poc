@@ -1,0 +1,39 @@
+{
+  "entity_name": "中国平安",
+  "entity_id": "601318.SH",
+  "period_label": "2024年",
+  "final_verdict": "低估",
+  "final_score": -3.0,
+  "final_confidence": "较高",
+  "executive_summary": "中国平安（601318.SH，2024年）；最终结论 **低估**（置信度 较高）；财报净利润 1266.07 亿元；关键词: attributable_profit, bvps, cash_flow_operating, eps, net_profit, operating_profit, revenue, roe",
+  "keywords": [
+    "attributable_profit",
+    "bvps",
+    "cash_flow_operating",
+    "eps",
+    "net_profit",
+    "operating_profit",
+    "revenue",
+    "roe",
+    "total_assets",
+    "total_equity",
+    "业务品质稳步",
+    "人均新业务价值同比",
+    "代理人渠道新业务价值",
+    "健康和养老意识进一步",
+    "创新",
+    "可比口径下同比",
+    "同比",
+    "增长",
+    "安寿险保单继续率显著",
+    "寿险及健康险业务持续"
+  ],
+  "synthesis_reasons": [
+    "近期网络资讯情绪偏正面",
+    "市盈率 PE(推算)≈7.5，处于行业合理区间下沿",
+    "PE 由现价 ÷ 财报每股收益推算",
+    "PB 由现价 ÷ 财报每股净资产推算",
+    "PEG≈0.16（PE/利润增速），盈利增速相对估值更有吸引力"
+  ],
+  "report_path": "C:\\Users\\Administrator\\Desktop\\financial-poc\\docs\\analysis\\601318_SH_2026-08-07.md"
+}

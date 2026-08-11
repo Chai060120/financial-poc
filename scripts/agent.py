@@ -1,11 +1,9 @@
 """
-Financial Agent 统一入口（PDF 财报 + 财经新闻）。
+Financial Agent 统一入口。
 
 用法:
-    python scripts/agent.py analyze                    # 一键全分析（推荐）
-    python scripts/agent.py analyze 贵州茅台.pdf       # 指定财报 PDF
-    python scripts/agent.py analyze 贵州茅台            # 指定公司（已入库）
-    python scripts/agent.py                            # 交互检索演示
+    python scripts/agent.py                    # 对话式 Agent（推荐）
+    python scripts/agent.py analyze            # 单次全量分析
 """
 
 from __future__ import annotations
@@ -472,11 +470,22 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     ensure_dirs()
+
+    # 对话式 Agent / analyze：默认静默日志，只展示分析结果
+    if args.command is None or args.command == "analyze":
+        import logging
+
+        logging.getLogger().setLevel(logging.ERROR)
+        for name in ("financial_poc", "sentence_transformers", "transformers", "httpx", "chromadb"):
+            logging.getLogger(name).setLevel(logging.ERROR)
+
     agent = create_financial_agent()
     command = args.command
 
     if command is None:
-        _run_interactive_query(agent)
+        from src.agent.analysis_agent import run_analysis_agent
+
+        run_analysis_agent(agent)
         return
 
     if command == "sync":
@@ -604,9 +613,22 @@ def main() -> None:
 
     if command == "analyze":
         try:
+            from src.agent.analysis_agent import format_results_for_display
+            from src.utils.quiet_mode import quiet_analysis
+
             target = args.target.strip() or None
-            results = agent.analyze(target, save_report=not args.no_save)
-            _print_full_analysis(results)
+
+            def _fundamentals_lookup(name: str, eid: str) -> dict:
+                try:
+                    v = agent.valuate(name, save_report=False)
+                    return v.fundamentals or {}
+                except Exception:
+                    return {}
+
+            print("\n分析中，请稍候…")
+            with quiet_analysis():
+                results = agent.analyze(target, save_report=not args.no_save)
+            print("\n" + format_results_for_display(results, _fundamentals_lookup))
         except Exception as exc:
             print(f"\n全量分析失败: {exc}")
             sys.exit(1)

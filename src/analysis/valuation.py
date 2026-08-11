@@ -25,7 +25,9 @@ from src.analysis.market_data import (
     fetch_market_snapshot,
 )
 from src.utils.entity_parser import detect_entity_in_text
-from src.utils.query_insights import build_query_insight
+from src.financial.metric_extractor import FinancialMetricExtractor
+from src.financial.valuation import ValuationCalculator
+from src.financial.validator import FinancialDataValidator
 from src.utils.stock_registry import get_stock_registry
 from src.vectorstore.unified_retrieval import UnifiedRetrievalEngine
 
@@ -69,6 +71,9 @@ class ValuationResult:
     market: dict[str, Any] = field(default_factory=dict)
     fundamentals: dict[str, Any] = field(default_factory=dict)
     reasons: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    valuation_metrics: dict[str, Any] = field(default_factory=dict)
+    data_reliable: bool = True
     report_path: Path | None = None
 
 
@@ -181,81 +186,15 @@ def _extract_fundamentals(
     entity_id: str,
     context: ReportContext,
 ) -> dict[str, Any]:
-    """从已索引财报检索并抽取核心指标（年报/半年报/季报通用）。"""
-    period = context.period_label
-    year = context.report_year
-    queries = {
-        "eps": f"{entity_name}{period}基本每股收益",
-        "roe": f"{entity_name}{period}加权平均净资产收益率",
-        "revenue": f"{entity_name}{period}营业收入",
-        "net_profit": f"{entity_name}{period}归属于上市公司股东的净利润",
-        "bvps": f"{entity_name}{period}每股净资产",
-        "summary": f"{entity_name}{period}主要会计数据和财务指标",
-    }
-
-    payload: dict[str, Any] = {
-        "report_year": year,
-        "report_type": context.report_type,
-        "period_label": period,
-    }
-    summary_text = _retrieve_text(engine, queries["summary"])
-
-    for key, question in queries.items():
-        if key == "summary":
-            continue
-        results_raw = engine.retrieve(question, top_k=5)
-        serialized = [
-            {
-                "text": item["text"],
-                "metadata": item["metadata"],
-                "rerank_score": item.get("rerank_score"),
-                "score": item.get("score"),
-            }
-            for item in results_raw
-        ]
-        insight = build_query_insight(question, serialized)
-        if insight and insight.metrics:
-            metric = insight.metrics[0]
-            payload[key] = {
-                "label": metric.metric,
-                "display": metric.display,
-                "raw": metric.raw_value,
-                "source": insight.file_name,
-            }
-
-    payload["revenue_growth_pct"] = _extract_yoy_growth(summary_text, "营业收入")
-    payload["profit_growth_pct"] = _extract_yoy_growth(summary_text, "净利润")
-    if payload.get("profit_growth_pct") is None:
-        payload["profit_growth_pct"] = _extract_yoy_growth(
-            summary_text, "归属于上市公司股东的净"
-        )
-
-    # 银行类财报常用「归属于本行股东」口径
-    if payload.get("net_profit") is None:
-        bank_q = f"{entity_name}{period}归属于本行股东的净利润"
-        results_raw = engine.retrieve(bank_q, top_k=5)
-        insight = build_query_insight(
-            bank_q,
-            [
-                {
-                    "text": item["text"],
-                    "metadata": item["metadata"],
-                    "rerank_score": item.get("rerank_score"),
-                    "score": item.get("score"),
-                }
-                for item in results_raw
-            ],
-        )
-        if insight and insight.metrics:
-            metric = insight.metrics[0]
-            payload["net_profit"] = {
-                "label": metric.metric,
-                "display": metric.display,
-                "raw": metric.raw_value,
-                "source": insight.file_name,
-            }
-
-    return payload
+    """使用 FinancialMetricExtractor 从已索引财报抽取核心指标。"""
+    extractor = FinancialMetricExtractor(engine)
+    return extractor.extract_as_fundamentals(
+        entity_name,
+        entity_id,
+        report_year=context.report_year,
+        report_type=context.report_type,
+        period_label=context.period_label,
+    )
 
 
 def _pe_label(market: MarketSnapshot) -> str:
@@ -287,8 +226,11 @@ def _score_valuation(
     pe = market.pe_ttm
     pb = market.pb
     profit_growth = fundamentals.get("profit_growth_pct")
-    roe_text = (fundamentals.get("roe") or {}).get("raw")
-    roe = _parse_number(str(roe_text).replace("%", "")) if roe_text else None
+    roe_item = fundamentals.get("roe") or {}
+    roe = roe_item.get("value")
+    if roe is None:
+        roe_text = str(roe_item.get("raw") or roe_item.get("display") or "")
+        roe = _parse_number(roe_text.replace("%", ""))
 
     is_financial = any(
         keyword in (market.industry + market.entity_name)
@@ -515,12 +457,47 @@ def analyze_valuation(
     market = fetch_market_snapshot(entity_id, entity_name)
     if not market.industry:
         market.industry = _infer_industry_from_report(engine, entity_name, entity_id)
-    market = enrich_market_from_fundamentals(market, fundamentals)
 
-    verdict, score, confidence, reasons = _score_valuation(
-        market=market,
-        fundamentals=fundamentals,
+    calc = ValuationCalculator()
+    val_metrics = calc.calculate(
+        market.price,
+        fundamentals,
+        live_pe=market.pe_ttm,
+        live_pb=market.pb,
     )
+
+    if val_metrics.pe is not None:
+        market.pe_ttm = val_metrics.pe
+        market.pe_source = val_metrics.pe_source or market.pe_source
+    if val_metrics.pb is not None:
+        market.pb = val_metrics.pb
+        market.pb_source = val_metrics.pb_source or market.pb_source
+
+    validator = FinancialDataValidator()
+    validation = validator.validate(
+        fundamentals,
+        pe=val_metrics.pe,
+        pb=val_metrics.pb,
+        entity_name=entity_name,
+    )
+
+    if not val_metrics.usable or not validation.reliable:
+        verdict = "无法可靠判断估值"
+        score = 0.0
+        confidence = "低"
+        reasons = ["财务指标或估值数据质量不足，无法给出可靠估值结论"]
+        if validation.warnings:
+            reasons.extend(validation.warnings[:4])
+    else:
+        verdict, score, confidence, reasons = _score_valuation(
+            market=market,
+            fundamentals=fundamentals,
+        )
+        if validation.warnings:
+            reasons.append("部分指标存在数据质量提示，结论仅供参考")
+            for warn in validation.warnings[:3]:
+                if warn not in reasons:
+                    reasons.append(warn)
 
     result = ValuationResult(
         entity_name=entity_name,
@@ -543,6 +520,9 @@ def analyze_valuation(
         },
         fundamentals=fundamentals,
         reasons=reasons,
+        warnings=validation.warnings,
+        valuation_metrics=val_metrics.to_dict(),
+        data_reliable=validation.reliable and val_metrics.usable,
     )
 
     if save_report:

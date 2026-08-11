@@ -65,13 +65,16 @@ _METRIC_PATTERNS: dict[str, tuple[str, ...]] = {
         r"基本每股收益[\s\n]*([\d.]+)",
     ),
     "净资产收益率": (
+        r"加权平均净资产收益率[\s\n]*(?:\(%?\))?[\s\n]*([\d.]+)",
         r"加权平均净资产收益率[\s\n]*([\d.]+)",
+        r"净资产收益率[\s\n]*(?:\(%?\))?[\s\n]*([\d.]+)",
         r"净资产收益率[\s\n]*([\d.]+)",
     ),
     "每股净资产": (
         r"每股净资产(?:\(元/股\))?[\s\n]*([\d.]+)",
         r"归属于上市公司股东的每股净资产[\s\n]*([\d.]+)",
         r"归属于(?:公司|本行)?(?:普通股)?股东的每股净资产[\s\n]*([\d.]+)",
+        r"每股净资产[\s\n]*(?:\(元\))?[\s\n]*([\d.]+)",
     ),
     "经营现金流": (
         r"经营活动产生的现金流量(?:净额)?[\s\n]*([\d,]+\.?\d*)",
@@ -456,6 +459,53 @@ def build_query_insight(
                 insight.entity_name = str(best.meta.get("entity_name") or "")
 
     return insight if insight.metrics else None
+
+
+def extract_metric_from_text(
+    text: str,
+    metric: str,
+    *,
+    question: str = "",
+) -> dict[str, str] | None:
+    """从一段文本规则抽取单个指标，返回与 valuation fundamentals 兼容的结构。"""
+    if not text or not metric:
+        return None
+
+    candidates: list[_MetricCandidate] = []
+    q = question or metric
+    for raw, context, snippet, full_text in _extract_metric_candidates(text, metric):
+        score = _score_metric_candidate(
+            metric=metric,
+            raw=raw,
+            text=full_text,
+            question=q,
+            rank=1,
+            rerank_score=None,
+        )
+        candidates.append(
+            _MetricCandidate(
+                metric=metric,
+                raw=raw,
+                context=context,
+                snippet=snippet,
+                full_text=full_text,
+                rank=1,
+                meta={},
+                score=score,
+            )
+        )
+
+    if not candidates:
+        return None
+
+    best = _select_best_candidate(candidates, metric, q)
+    display, _detail = _format_metric_display(metric, best.raw, best.context, best.full_text)
+    return {
+        "label": metric,
+        "display": display,
+        "raw": best.raw,
+        "source": "text_extract",
+    }
 
 
 def format_query_insight(insight: QueryInsight) -> str:

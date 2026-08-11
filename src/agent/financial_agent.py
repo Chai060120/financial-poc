@@ -321,6 +321,12 @@ class FinancialAgent:
             save_report=save_report,
         )
 
+    def chat(self) -> None:
+        """进入对话式分析 Agent（意图识别 + 多轮追问）。"""
+        from src.agent.analysis_agent import run_analysis_agent
+
+        run_analysis_agent(self)
+
 
 def create_financial_agent(**kwargs: Any) -> FinancialAgent:
     """创建 Financial Agent 实例。"""

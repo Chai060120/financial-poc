@@ -19,7 +19,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config import AGENT_WATCHLIST, DEFAULT_ENCODING, DOCS_DIR, setup_logging
-from src.analysis.market_data import fetch_market_snapshot
+from src.analysis.market_data import fetch_market_snapshot_enriched
 from src.analysis.valuation import ValuationResult, analyze_valuation
 from src.collectors.market_collector import (
     NewsItem,
@@ -294,7 +294,20 @@ def analyze_market_comparison(
 
     logger.info("实时对比分析: %s (%s)", entity_name, entity_id)
 
-    snapshot = fetch_market_snapshot(entity_id, entity_name)
+    valuation: ValuationResult | None = None
+    fundamentals: dict = {}
+    if include_valuation and engine is not None:
+        try:
+            valuation = analyze_valuation(
+                query,
+                engine,
+                save_report=False,
+            )
+            fundamentals = valuation.fundamentals or {}
+        except Exception as exc:
+            logger.warning("财报估值跳过: %s", exc)
+
+    snapshot = fetch_market_snapshot_enriched(entity_id, entity_name, fundamentals)
     target = snapshot_to_peer(snapshot)
     industry = snapshot.industry
 
@@ -318,17 +331,6 @@ def analyze_market_comparison(
 
     stats = _build_industry_stats(target, peers)
     relative = _relative_verdict(target, stats, sentiment)
-
-    valuation: ValuationResult | None = None
-    if include_valuation and engine is not None:
-        try:
-            valuation = analyze_valuation(
-                query,
-                engine,
-                save_report=False,
-            )
-        except Exception as exc:
-            logger.warning("财报估值跳过: %s", exc)
 
     result = ComparisonResult(
         entity_name=entity_name,

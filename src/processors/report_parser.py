@@ -27,6 +27,8 @@ from src.processors.chunker import chunk_text
 from src.processors.pdf_parser import PageContent
 from src.processors.text_cleaner import clean_text
 
+from src.financial.metric_dictionary import TABLE_CONTEXT_PATTERNS
+
 logger = setup_logging(__name__)
 
 # 标准章节名称（用于 metadata.section）
@@ -107,6 +109,7 @@ class ReportSegment(TypedDict):
     page_start: int
     page_end: int
     table_name: str
+    table_context: str
     text: str
 
 
@@ -125,6 +128,7 @@ def empty_report_metadata() -> dict[str, Any]:
         "page_start": 0,
         "page_end": 0,
         "table_name": "",
+        "table_context": "",
     }
 
 
@@ -136,7 +140,19 @@ def segment_to_metadata(segment: ReportSegment) -> dict[str, Any]:
         "page_start": segment["page_start"],
         "page_end": segment["page_end"],
         "table_name": segment["table_name"],
+        "table_context": segment.get("table_context") or "",
     }
+
+
+def detect_table_context(line: str) -> str:
+    """识别表格上下文标题（如主要会计数据和财务指标）。"""
+    content = line.strip()
+    if not content or len(content) > 80:
+        return ""
+    for pattern, label in TABLE_CONTEXT_PATTERNS:
+        if pattern in content:
+            return label
+    return ""
 
 
 def detect_section(line: str) -> str:
@@ -194,12 +210,13 @@ def parse_report(pages: list[PageContent]) -> list[ReportSegment]:
     segments: list[ReportSegment] = []
     current_section = ""
     current_table = ""
+    current_table_context = ""
     current_lines: list[str] = []
     current_page_start = 0
     current_page_end = 0
 
     def flush() -> None:
-        nonlocal current_lines, current_section, current_table
+        nonlocal current_lines, current_section, current_table, current_table_context
         nonlocal current_page_start, current_page_end
 
         text = clean_text("\n".join(current_lines))
@@ -218,6 +235,7 @@ def parse_report(pages: list[PageContent]) -> list[ReportSegment]:
                 "page_start": current_page_start or page,
                 "page_end": current_page_end or page,
                 "table_name": table_name,
+                "table_context": current_table_context,
                 "text": text,
             }
         )
@@ -233,6 +251,10 @@ def parse_report(pages: list[PageContent]) -> list[ReportSegment]:
             stripped = line.strip()
             detected_section = detect_section(stripped)
             detected_table = detect_table_name(stripped)
+            detected_context = detect_table_context(stripped)
+
+            if detected_context:
+                current_table_context = detected_context
 
             if detected_section and detected_section != current_section:
                 flush()
@@ -273,6 +295,7 @@ def parse_report(pages: list[PageContent]) -> list[ReportSegment]:
                     "page_start": first_page,
                     "page_end": last_page,
                     "table_name": "",
+                    "table_context": "",
                     "text": merged_text,
                 }
             )
