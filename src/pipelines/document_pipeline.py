@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +41,122 @@ from src.processors.tokenizer import Token, build_news_tokens, build_pdf_tokens,
 from src.utils.entity_parser import parse_filename, to_token_metadata
 
 logger = setup_logging(__name__)
+
+
+def _atomic_write_text(path: Path, text: str, *, encoding: str = DEFAULT_ENCODING) -> None:
+    """原子写入文本文件，规避 Windows 上短暂锁文件导致的 Errno 22。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.stem}.{uuid.uuid4().hex}.tmp")
+    last_error: Exception | None = None
+    try:
+        tmp.write_text(text, encoding=encoding)
+        for attempt in range(8):
+            try:
+                os.replace(tmp, path)
+                return
+            except OSError as exc:
+                last_error = exc
+                time.sleep(0.05 * (attempt + 1))
+        # 回退：直接写目标
+        for attempt in range(5):
+            try:
+                path.write_text(text, encoding=encoding)
+                return
+            except OSError as exc:
+                last_error = exc
+                time.sleep(0.08 * (attempt + 1))
+        raise OSError(f"写入失败: {path} ({last_error})")
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def _sanitize_csv_cell(value: Any) -> Any:
+    """去掉 NUL 等 Windows 写入时易触发 Errno 22 的字符。"""
+    if not isinstance(value, str):
+        return value
+    return value.replace("\x00", "")
+
+
+def _write_unified_csv(df: pd.DataFrame, target: Path = UNIFIED_CSV) -> Path:
+    """
+    原子写入 unified.csv，并在 Windows 文件被短暂占用时重试。
+
+    Desktop 路径下 Defender/索引器常短暂锁文件，直接 open('w') 可能报 Errno 22。
+    tokens.json 才是索引主数据源；CSV 写失败时降级为警告，不阻断入库。
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    safe_df = df.copy()
+    for col in safe_df.select_dtypes(include=["object"]).columns:
+        safe_df[col] = safe_df[col].map(_sanitize_csv_cell)
+
+    tmp = target.with_name(f".{target.stem}.{uuid.uuid4().hex}.tmp")
+    last_error: Exception | None = None
+    try:
+        safe_df.to_csv(tmp, index=False, encoding="utf-8-sig")
+        for attempt in range(8):
+            try:
+                os.replace(tmp, target)
+                return target
+            except OSError as exc:
+                last_error = exc
+                time.sleep(0.05 * (attempt + 1))
+        # replace 持续失败时尝试直接写入目标
+        for attempt in range(5):
+            try:
+                safe_df.to_csv(target, index=False, encoding="utf-8-sig")
+                return target
+            except OSError as exc:
+                last_error = exc
+                time.sleep(0.08 * (attempt + 1))
+        logger.warning(
+            "unified.csv 写入失败（已跳过，不影响 tokens.json）: %s",
+            last_error,
+        )
+        return target
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+
+def tokens_to_rows(tokens: list[Token]) -> list[dict[str, Any]]:
+    """将 Token 列表展平为 CSV 行。"""
+    rows: list[dict[str, Any]] = []
+    for token in tokens:
+        meta = token["metadata"]
+        rows.append(
+            {
+                "id": token["id"],
+                "type": token["type"],
+                "source": token["source"],
+                "text": _sanitize_csv_cell(token["text"]),
+                "entity_id": meta.get("entity_id", ""),
+                "entity_name": meta.get("entity_name", ""),
+                "date": meta.get("date", ""),
+                "report_year": meta.get("report_year", ""),
+                "report_type": meta.get("report_type", ""),
+                "title": meta.get("title", ""),
+                "file_name": meta.get("file_name", ""),
+                "file_path": meta.get("file_path", ""),
+                "news_source": meta.get("news_source", ""),
+                "url": meta.get("url", ""),
+                "publish_time": meta.get("publish_time", ""),
+                "chunk_index": meta.get("chunk_index", 0),
+                "total_chunks": meta.get("total_chunks", 0),
+                "section": meta.get("section", ""),
+                "page": meta.get("page", 0),
+                "page_start": meta.get("page_start", 0),
+                "page_end": meta.get("page_end", 0),
+                "table_name": meta.get("table_name", ""),
+            }
+        )
+    return rows
 
 
 def process_pdf(pdf_path: Path, metadata: dict[str, Any] | None = None) -> list[Token]:
@@ -121,40 +240,6 @@ def process_news_from_json(news_path: Path | None = None) -> tuple[list[Token], 
     return all_tokens, {"news_records": len(records), "news_failed": failed}
 
 
-def tokens_to_rows(tokens: list[Token]) -> list[dict[str, Any]]:
-    """将 Token 列表展平为 CSV 行。"""
-    rows: list[dict[str, Any]] = []
-    for token in tokens:
-        meta = token["metadata"]
-        rows.append(
-            {
-                "id": token["id"],
-                "type": token["type"],
-                "source": token["source"],
-                "text": token["text"],
-                "entity_id": meta.get("entity_id", ""),
-                "entity_name": meta.get("entity_name", ""),
-                "date": meta.get("date", ""),
-                "report_year": meta.get("report_year", ""),
-                "report_type": meta.get("report_type", ""),
-                "title": meta.get("title", ""),
-                "file_name": meta.get("file_name", ""),
-                "file_path": meta.get("file_path", ""),
-                "news_source": meta.get("news_source", ""),
-                "url": meta.get("url", ""),
-                "publish_time": meta.get("publish_time", ""),
-                "chunk_index": meta.get("chunk_index", 0),
-                "total_chunks": meta.get("total_chunks", 0),
-                "section": meta.get("section", ""),
-                "page": meta.get("page", 0),
-                "page_start": meta.get("page_start", 0),
-                "page_end": meta.get("page_end", 0),
-                "table_name": meta.get("table_name", ""),
-            }
-        )
-    return rows
-
-
 def load_existing_token_dicts(tokens_path: Path = TOKENS_JSON) -> list[dict[str, Any]]:
     if not tokens_path.exists():
         return []
@@ -192,8 +277,10 @@ def run_news_append() -> dict[str, Any]:
 def save_tokens_from_dicts(token_dicts: list[dict[str, Any]]) -> tuple[Path, Path]:
     ensure_dirs()
     TOKENS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(TOKENS_JSON, "w", encoding=DEFAULT_ENCODING) as file:
-        json.dump(token_dicts, file, ensure_ascii=False, indent=2)
+    _atomic_write_text(
+        TOKENS_JSON,
+        json.dumps(token_dicts, ensure_ascii=False, indent=2),
+    )
 
     as_tokens: list[Token] = [
         {
@@ -206,7 +293,7 @@ def save_tokens_from_dicts(token_dicts: list[dict[str, Any]]) -> tuple[Path, Pat
         for item in token_dicts
     ]
     df = pd.DataFrame(tokens_to_rows(as_tokens))
-    df.to_csv(UNIFIED_CSV, index=False, encoding="utf-8-sig")
+    _write_unified_csv(df, UNIFIED_CSV)
     return TOKENS_JSON, UNIFIED_CSV
 
 
@@ -215,12 +302,14 @@ def save_tokens(tokens: list[Token]) -> tuple[Path, Path]:
     TOKENS_DIR.mkdir(parents=True, exist_ok=True)
 
     token_dicts = tokens_to_dicts(tokens)
-    with open(TOKENS_JSON, "w", encoding=DEFAULT_ENCODING) as file:
-        json.dump(token_dicts, file, ensure_ascii=False, indent=2)
+    _atomic_write_text(
+        TOKENS_JSON,
+        json.dumps(token_dicts, ensure_ascii=False, indent=2),
+    )
 
     rows = tokens_to_rows(tokens)
     df = pd.DataFrame(rows)
-    df.to_csv(UNIFIED_CSV, index=False, encoding="utf-8-sig")
+    _write_unified_csv(df, UNIFIED_CSV)
     return TOKENS_JSON, UNIFIED_CSV
 
 

@@ -1,0 +1,27 @@
+{
+  "entity_name": "贵州茅台",
+  "entity_id": "600519.SH",
+  "period_label": "2024年",
+  "final_verdict": "合理",
+  "final_score": -0.5,
+  "final_confidence": "中",
+  "executive_summary": "贵州茅台（600519.SH，2024年）；最终结论 **合理**（置信度 中）；财报净利润 862.28 亿元；关键词: 主营业务, 净利润, 创新, 可持续, 增长, 数字化, 研发, 竞争",
+  "keywords": [
+    "主营业务",
+    "净利润",
+    "创新",
+    "可持续",
+    "增长",
+    "数字化",
+    "研发",
+    "竞争",
+    "营业收入"
+  ],
+  "synthesis_reasons": [
+    "市盈率 PE(推算)≈19.6，处于行业合理区间下沿",
+    "PE 由现价 ÷ 财报每股收益推算",
+    "PB 由现价 ÷ 财报每股净资产推算",
+    "PEG≈1.28，成长性与估值匹配度尚可"
+  ],
+  "report_path": "C:\\Users\\Administrator\\Desktop\\financial-poc\\docs\\analysis\\600519_SH_2026-08-11.md"
+}

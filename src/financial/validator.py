@@ -20,6 +20,9 @@ class ValidationReport:
         }
 
 
+# 白酒龙头 EPS 常年可高于 50 元/股（如茅台），不能一律当脏数据
+
+
 class FinancialDataValidator:
     def validate(
         self,
@@ -30,7 +33,10 @@ class FinancialDataValidator:
         entity_name: str = "",
     ) -> ValidationReport:
         report = ValidationReport()
-        is_financial = any(k in entity_name for k in ("银行", "保险", "平安", "招行"))
+        name = entity_name or ""
+        is_financial = any(k in name for k in ("银行", "保险", "平安", "招行"))
+        # 白酒龙头 EPS 常年可高于 50 元/股（如茅台），不能一律当脏数据
+        high_eps_ok = any(k in name for k in ("茅台", "五粮液", "泸州老窖", "洋河"))
 
         roe = self._scalar(fundamentals.get("roe"))
         eps = self._scalar(fundamentals.get("eps"))
@@ -40,23 +46,35 @@ class FinancialDataValidator:
         )
         revenue = self._scalar(fundamentals.get("revenue"))
 
+        hard_flags: list[str] = []
+
         if roe is not None and roe > 100:
-            report.warnings.append("ROE异常（>100%），可能单位错误或误抽年份")
-        if eps is not None and eps > 50 and not is_financial:
-            report.warnings.append("EPS异常（>50元/股），普通公司需核对")
-        if bvps is not None and bvps > 500:
-            report.warnings.append("每股净资产异常偏高，可能单位错误")
+            hard_flags.append("ROE异常（>100%），可能单位错误或误抽年份")
+
+        if eps is not None and eps > 50 and not is_financial and not high_eps_ok:
+            # PE 与现价交叉验证通过时，高 EPS 多半是真实高价股，仅作提示
+            pe_ok = pe is not None and 3.0 <= pe <= 80.0
+            if pe_ok:
+                report.warnings.append(
+                    f"EPS偏高（{eps:.2f}元/股）但与现价交叉验证一致（PE≈{pe:.1f}）"
+                )
+            else:
+                hard_flags.append("EPS异常（>50元/股），普通公司需核对")
+
+        if bvps is not None and bvps > 500 and not high_eps_ok:
+            hard_flags.append("每股净资产异常偏高，可能单位错误")
+
         if pe is not None:
             if pe < 1:
-                report.warnings.append("PE异常（<1），可能EPS单位错误")
+                hard_flags.append("PE异常（<1），可能EPS单位错误")
             elif pe > 200:
-                report.warnings.append("PE异常（>200），可能EPS过小或单位错误")
+                hard_flags.append("PE异常（>200），可能EPS过小或单位错误")
         if pb is not None and pb < 0.1:
-            report.warnings.append("PB异常（<0.1），可能每股净资产单位错误")
+            hard_flags.append("PB异常（<0.1），可能每股净资产单位错误")
         if net_profit is not None and revenue is not None and net_profit > revenue:
-            report.warnings.append("净利润大于营业收入，逻辑异常")
+            hard_flags.append("净利润大于营业收入，逻辑异常")
         if net_profit is not None and net_profit < 1 and revenue and revenue > 50:
-            report.warnings.append("净利润规模异常偏小，可能单位错误")
+            hard_flags.append("净利润规模异常偏小，可能单位错误")
 
         for key, label in (("eps", "每股收益"), ("bvps", "每股净资产"), ("roe", "ROE")):
             item = fundamentals.get(key)
@@ -65,11 +83,15 @@ class FinancialDataValidator:
                 if 0 < conf < 0.8:
                     report.warnings.append(f"{label}抽取置信度偏低（{conf:.0%}）")
 
-        if report.warnings:
-            report.reliable = len(report.warnings) <= 1 and not any(
-                "单位错误" in w or "异常" in w for w in report.warnings
-            )
-            report.quality_score = max(0.2, 1.0 - 0.15 * len(report.warnings))
+        report.warnings.extend(hard_flags)
+
+        if hard_flags:
+            report.reliable = False
+            report.quality_score = max(0.2, 1.0 - 0.2 * len(hard_flags))
+        elif report.warnings:
+            # 仅有软提示：仍可给出高估/合理/低估结论
+            report.reliable = True
+            report.quality_score = max(0.6, 1.0 - 0.1 * len(report.warnings))
         return report
 
     @staticmethod

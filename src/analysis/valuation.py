@@ -86,11 +86,12 @@ def _resolve_entity(query: str) -> tuple[str, str]:
 
 
 def _benchmarks_for(industry: str, entity_name: str) -> dict[str, tuple[float, float]]:
-    if any(keyword in industry for keyword in ("白酒", "酿酒")):
+    text = f"{industry or ''} {entity_name or ''}"
+    if any(keyword in text for keyword in ("白酒", "酿酒", "茅台", "五粮液", "泸州老窖", "洋河")):
         return _INDUSTRY_BENCHMARKS["白酒"]
-    if any(keyword in industry or keyword in entity_name for keyword in _FINANCIAL_KEYWORDS):
+    if any(keyword in text for keyword in _FINANCIAL_KEYWORDS):
         return _INDUSTRY_BENCHMARKS["银行"]
-    if "保险" in industry or "保险" in entity_name:
+    if "保险" in text:
         return _INDUSTRY_BENCHMARKS["保险"]
     return _INDUSTRY_BENCHMARKS["default"]
 

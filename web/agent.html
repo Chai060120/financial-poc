@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Financial Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0b1016;
+      --bg-elev: #121922;
+      --bg-panel: #161e28;
+      --line: rgba(148, 163, 184, 0.14);
+      --line-strong: rgba(148, 163, 184, 0.28);
+      --text: #eef3f8;
+      --muted: #8fa0b3;
+      --accent: #2f9e7b;
+      --accent-soft: rgba(47, 158, 123, 0.14);
+      --accent-2: #d0a85c;
+      --user: #1c2a3a;
+      --bot: #101820;
+      --danger: #c45c5c;
+      --radius: 16px;
+      --shadow: 0 20px 48px rgba(0, 0, 0, 0.32);
+      --font: "DM Sans", sans-serif;
+      --mono: "JetBrains Mono", ui-monospace, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      color: var(--text);
+      font-family: var(--font);
+      background:
+        radial-gradient(900px 480px at 8% -8%, rgba(47, 158, 123, 0.18), transparent 55%),
+        radial-gradient(700px 420px at 92% 0%, rgba(208, 168, 92, 0.1), transparent 48%),
+        linear-gradient(180deg, #0d131b 0%, var(--bg) 42%, #0a0e13 100%);
+    }
+
+    .shell {
+      height: 100%;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      height: 100%;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      overflow: hidden;
+      background: rgba(12, 17, 24, 0.72);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .side {
+      min-width: 0;
+      border-right: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(22, 30, 40, 0.95), rgba(14, 19, 26, 0.98));
+      padding: 28px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      overflow-y: auto;
+    }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 11px;
+      background:
+        linear-gradient(145deg, rgba(47, 158, 123, 0.95), rgba(30, 110, 88, 0.9));
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      color: #04140f;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 24px rgba(47, 158, 123, 0.25);
+    }
+
+    .brand {
+      font-size: 1.45rem;
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      line-height: 1.15;
+    }
+    .brand em {
+      font-style: normal;
+      color: var(--accent-2);
+    }
+    .brand p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      font-weight: 400;
+      line-height: 1.5;
+    }
+
+    .tip {
+      padding: 12px 13px;
+      border-radius: 12px;
+      border: 1px solid rgba(208, 168, 92, 0.22);
+      background: rgba(208, 168, 92, 0.08);
+      color: #e6d3a8;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+    .tip strong {
+      color: var(--accent-2);
+      font-weight: 600;
+    }
+
+    .side-actions {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-top: 8px;
+    }
+    .btn {
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 11px 14px;
+      cursor: pointer;
+      font: inherit;
+      text-decoration: none;
+      text-align: center;
+      transition: border-color .15s, background .15s;
+    }
+    .btn:hover { border-color: var(--line-strong); background: rgba(255,255,255,0.03); }
+    .btn.primary {
+      background: linear-gradient(180deg, #39b089, var(--accent));
+      border-color: transparent;
+      color: #04140f;
+      font-weight: 650;
+      box-shadow: 0 10px 24px rgba(47, 158, 123, 0.22);
+    }
+    .btn.primary:hover { filter: brightness(1.05); }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      background:
+        linear-gradient(180deg, rgba(18, 25, 34, 0.55), rgba(11, 16, 22, 0.2));
+    }
+
+    .topbar {
+      padding: 18px 28px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .topbar h1 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .topbar h1 span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 400;
+    }
+    .status {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-family: var(--mono);
+      padding: 7px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.02);
+      white-space: nowrap;
+    }
+    .status strong { color: var(--accent-2); font-weight: 500; }
+
+    .chat {
+      flex: 1;
+      min-height: 0;
+      min-width: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 24px 28px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .bubble {
+      max-width: min(760px, 100%);
+      width: fit-content;
+      min-width: 0;
+      padding: 14px 16px;
+      border-radius: 16px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      line-height: 1.55;
+      border: 1px solid var(--line);
+      animation: rise .28s ease;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+    .bubble.bot {
+      align-self: stretch;
+      width: 100%;
+      max-width: 100%;
+      background: var(--bot);
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      line-height: 1.6;
+      overflow-x: auto;
+      overflow-wrap: normal;
+      word-break: normal;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+    }
+    .bubble.bot::-webkit-scrollbar { height: 8px; }
+    .bubble.bot::-webkit-scrollbar-thumb {
+      background: rgba(143, 160, 179, 0.35);
+      border-radius: 99px;
+    }
+    .bubble.user {
+      align-self: flex-end;
+      background: var(--user);
+      border-color: rgba(47, 158, 123, 0.22);
+    }
+    .bubble.system {
+      align-self: center;
+      max-width: 560px;
+      width: auto;
+      background: rgba(255,255,255,0.02);
+      box-shadow: none;
+      color: var(--muted);
+      border-style: dashed;
+      font-size: 0.9rem;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 14px 22px 18px;
+      background: rgba(10, 14, 19, 0.88);
+      flex-shrink: 0;
+    }
+    .composer-box {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 10px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .composer-box:focus-within {
+      border-color: rgba(47, 158, 123, 0.45);
+      box-shadow: 0 0 0 3px rgba(47, 158, 123, 0.12);
+    }
+    .upload-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      border: 1px dashed var(--line-strong);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.15rem;
+      flex-shrink: 0;
+    }
+    .upload-btn:hover { color: var(--text); border-color: var(--accent); }
+    textarea {
+      width: 100%;
+      min-width: 0;
+      resize: none;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      min-height: 44px;
+      max-height: 140px;
+      padding: 10px 4px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .send {
+      height: 42px;
+      padding: 0 18px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #39b089, var(--accent));
+      color: #04140f;
+      font-weight: 650;
+      cursor: pointer;
+      font: inherit;
+      flex-shrink: 0;
+    }
+    .send:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hint-row {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
+    .hint-row code {
+      font-family: var(--mono);
+      font-size: 0.72rem;
+      color: #c7d2df;
+      background: rgba(255,255,255,0.04);
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+
+    .busy {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      color: var(--accent-2);
+      font-size: 0.84rem;
+      padding: 0 28px 10px;
+      flex-shrink: 0;
+    }
+    .busy.show { display: flex; }
+    .busy .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-2);
+      animation: pulse 1s ease infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: .35; transform: scale(.85); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+
+    /* Upload rename modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 8, 12, 0.62);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 50;
+      backdrop-filter: blur(6px);
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      width: min(480px, 100%);
+      background: #141c26;
+      border: 1px solid var(--line-strong);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+      animation: rise .25s ease;
+    }
+    .modal h2 {
+      margin: 0 0 8px;
+      font-size: 1.1rem;
+      letter-spacing: -0.02em;
+    }
+    .modal p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+    .modal label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .modal input {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: var(--bg-elev);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: inherit;
+      margin-bottom: 10px;
+      outline: none;
+    }
+    .modal input:focus {
+      border-color: rgba(47, 158, 123, 0.5);
+      box-shadow: 0 0 0 3px rgba(47, 158, 123, 0.12);
+    }
+    .modal .example {
+      margin: 0 0 18px;
+      font-size: 0.8rem;
+      color: #b7c4d4;
+      line-height: 1.5;
+    }
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    @media (max-width: 900px) {
+      .shell { padding: 0; }
+      .app {
+        grid-template-columns: 1fr;
+        border-radius: 0;
+        border: none;
+      }
+      .side {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+        max-height: 42vh;
+      }
+      .side-actions { margin-top: 0; }
+      .chat { padding: 16px; }
+      .composer { padding: 12px 14px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="app">
+      <aside class="side">
+        <div>
+          <div class="brand-mark">FA</div>
+          <div class="brand">
+            Financial <em>Agent</em>
+            <p>上传财报或输入公司名，自动给出估值结论，并支持多轮追问。</p>
+          </div>
+        </div>
+
+        <div class="tip">
+          <strong>用法：</strong>对话框输入「美的集团 2024」即可自动从巨潮下载年报并抓取新闻。
+          也可手动上传 PDF；乱码文件名建议改成
+          <strong>公司名+年份+年报.pdf</strong>。
+        </div>
+
+        <div class="side-actions">
+          <button class="btn primary" id="btnUploadSide" type="button">上传 PDF 财报</button>
+          <button class="btn" id="btnReset" type="button">清空会话</button>
+          <a class="btn" href="/docs" target="_blank" rel="noreferrer">API Docs</a>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="topbar">
+          <h1>
+            财报对话分析
+            <span>输入公司名，或上传 PDF 开始分析</span>
+          </h1>
+          <div class="status">会话 <strong id="sessionLabel">—</strong></div>
+        </div>
+
+        <div class="chat" id="chat">
+          <div class="bubble system">输入「公司名」或「公司名+年份」即可自动检索财报并分析，例如：美的集团 2024。也可上传 PDF。分析后可追问：为什么？ / 和同业比呢？ / 净利润多少？</div>
+        </div>
+
+        <div class="busy" id="busy"><span class="dot"></span>分析中，请稍候（首次加载模型可能较慢）…</div>
+
+        <div class="composer">
+          <div class="composer-box">
+            <button class="upload-btn" id="btnUpload" type="button" title="上传 PDF">＋</button>
+            <textarea id="input" rows="1" placeholder="例如：美的集团 2024 / 贵州茅台2024年报…"></textarea>
+            <button class="send" id="btnSend" type="button">发送</button>
+          </div>
+          <div class="hint-row">
+            <span>输入公司名+年份可自动下载年报并抓新闻</span>
+            <span>也可上传：<code>公司名2024年年度报告.pdf</code></span>
+          </div>
+          <input type="file" id="file" accept=".pdf,application/pdf" hidden />
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="uploadModal" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="uploadTitle">
+      <h2 id="uploadTitle">确认上传文件名</h2>
+      <p>Agent 会尽量自动识别公司；文件名含公司名时更稳。可直接用原名，也可改成推荐格式。</p>
+      <label for="renameInput">保存为</label>
+      <input id="renameInput" type="text" autocomplete="off" />
+      <div class="example">推荐格式：美的集团2025年年度报告.pdf<br />也可带代码：000333.SZ_2025年报.pdf</div>
+      <div class="modal-actions">
+        <button class="btn" id="btnCancelUpload" type="button">取消</button>
+        <button class="btn primary" id="btnConfirmUpload" type="button">上传并分析</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      sessionId: localStorage.getItem("fa_session_id") || null,
+      busy: false,
+      pendingFile: null,
+    };
+
+    const chatEl = document.getElementById("chat");
+    const inputEl = document.getElementById("input");
+    const busyEl = document.getElementById("busy");
+    const sessionLabel = document.getElementById("sessionLabel");
+    const uploadModal = document.getElementById("uploadModal");
+    const renameInput = document.getElementById("renameInput");
+
+    function setBusy(v) {
+      state.busy = v;
+      busyEl.classList.toggle("show", v);
+      document.getElementById("btnSend").disabled = v;
+      document.getElementById("btnUpload").disabled = v;
+      document.getElementById("btnUploadSide").disabled = v;
+    }
+
+    function addBubble(text, kind) {
+      const div = document.createElement("div");
+      div.className = "bubble " + kind;
+      div.textContent = text;
+      chatEl.appendChild(div);
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
+
+    function updateSession(id) {
+      if (!id) return;
+      state.sessionId = id;
+      localStorage.setItem("fa_session_id", id);
+      sessionLabel.textContent = id.slice(0, 8) + "…";
+    }
+
+    function looksWeakName(name) {
+      const stem = String(name || "").replace(/\.pdf$/i, "");
+      if (!stem || stem.length < 4) return true;
+      if (/^(scan|img|image|document|report|untitled|新建|文档)/i.test(stem)) return true;
+      if (/^[\d_\-\s]+$/.test(stem)) return true;
+      return false;
+    }
+
+    function openUploadModal(file) {
+      state.pendingFile = file;
+      renameInput.value = file.name.endsWith(".pdf") || file.name.endsWith(".PDF")
+        ? file.name
+        : file.name + ".pdf";
+      uploadModal.classList.add("show");
+      uploadModal.setAttribute("aria-hidden", "false");
+      renameInput.focus();
+      renameInput.select();
+    }
+
+    function closeUploadModal() {
+      state.pendingFile = null;
+      uploadModal.classList.remove("show");
+      uploadModal.setAttribute("aria-hidden", "true");
+      document.getElementById("file").value = "";
+    }
+
+    async function sendMessage(text) {
+      const message = (text || "").trim();
+      if (!message || state.busy) return;
+      addBubble(message, "user");
+      inputEl.value = "";
+      setBusy(true);
+      try {
+        const res = await fetch("/api/agent/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, session_id: state.sessionId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "请求失败");
+        updateSession(data.session_id);
+        addBubble(data.reply || "(空回复)", "bot");
+      } catch (err) {
+        addBubble("出错了：" + err.message, "system");
+      } finally {
+        setBusy(false);
+        inputEl.focus();
+      }
+    }
+
+    async function resetSession() {
+      setBusy(true);
+      try {
+        const res = await fetch("/api/agent/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: state.sessionId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "重置失败");
+        updateSession(data.session_id);
+        chatEl.innerHTML = "";
+        addBubble(data.reply, "system");
+      } catch (err) {
+        addBubble("清空失败：" + err.message, "system");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function uploadPdf(file, displayName) {
+      if (!file || state.busy) return;
+      let name = (displayName || file.name || "report.pdf").trim();
+      if (!name.toLowerCase().endsWith(".pdf")) name += ".pdf";
+      addBubble("上传 PDF：" + name, "user");
+      if (looksWeakName(name)) {
+        addBubble("提示：当前文件名可能不易识别公司，建议使用「公司名+年份+年报.pdf」。", "system");
+      }
+      setBusy(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file, name);
+        const url = state.sessionId
+          ? "/api/agent/upload?session_id=" + encodeURIComponent(state.sessionId)
+          : "/api/agent/upload";
+        const res = await fetch(url, { method: "POST", body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || "上传失败");
+        updateSession(data.session_id);
+        addBubble(data.reply || "分析完成", "bot");
+      } catch (err) {
+        addBubble("上传/分析失败：" + err.message, "system");
+      } finally {
+        setBusy(false);
+        document.getElementById("file").value = "";
+      }
+    }
+
+    function pickPdf() {
+      document.getElementById("file").click();
+    }
+
+    document.getElementById("btnSend").onclick = () => sendMessage(inputEl.value);
+    document.getElementById("btnReset").onclick = resetSession;
+    document.getElementById("btnUpload").onclick = pickPdf;
+    document.getElementById("btnUploadSide").onclick = pickPdf;
+    document.getElementById("file").onchange = (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) openUploadModal(f);
+    };
+    document.getElementById("btnCancelUpload").onclick = closeUploadModal;
+    document.getElementById("btnConfirmUpload").onclick = async () => {
+      const file = state.pendingFile;
+      const name = renameInput.value.trim();
+      if (!file || !name) return;
+      closeUploadModal();
+      await uploadPdf(file, name);
+    };
+    uploadModal.addEventListener("click", (e) => {
+      if (e.target === uploadModal) closeUploadModal();
+    });
+    renameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("btnConfirmUpload").click();
+      }
+      if (e.key === "Escape") closeUploadModal();
+    });
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(inputEl.value);
+      }
+    });
+    inputEl.addEventListener("input", () => {
+      inputEl.style.height = "auto";
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + "px";
+    });
+
+    if (state.sessionId) updateSession(state.sessionId);
+  </script>
+</body>
+</html>

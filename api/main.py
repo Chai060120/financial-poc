@@ -1,8 +1,11 @@
 """
-Financial PoC REST API — Financial Agent（PDF 财报 + 财经新闻）。
+Financial PoC REST API + 网页 Agent。
 
 启动:
     uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+
+网页 Agent:
+    http://127.0.0.1:8000/agent
 
 Swagger UI:
     http://127.0.0.1:8000/docs
@@ -20,15 +23,19 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from config import add_project_root_to_path, ensure_dirs, setup_logging
 from api.dependencies import AppState
-from api.routes import chat, health, index, query
+from api.routes import agent_web, chat, health, index, query
 from api.schemas import ErrorResponse
 
 add_project_root_to_path()
 logger = setup_logging(__name__)
+
+WEB_DIR = _PROJECT_ROOT / "web"
+AGENT_HTML = WEB_DIR / "agent.html"
 
 
 @asynccontextmanager
@@ -43,14 +50,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Financial PoC API",
     description=(
-        "财报/新闻 RAG 检索与对话 REST API。\n\n"
-        "主要接口:\n"
+        "财报分析网页 Agent + RAG API。\n\n"
+        "网页: `/agent`\n"
+        "接口:\n"
+        "- `POST /api/agent/chat` 对话分析\n"
+        "- `POST /api/agent/upload` 上传 PDF\n"
         "- `GET /health` 健康检查\n"
-        "- `POST /query` 向量/Hybrid 检索\n"
-        "- `POST /chat` RAG 连续对话\n"
-        "- `POST /index` 构建向量索引"
+        "- `POST /query` 检索\n"
+        "- `POST /chat` RAG 对话"
     ),
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -88,22 +97,22 @@ app.include_router(health.router)
 app.include_router(query.router)
 app.include_router(chat.router)
 app.include_router(index.router)
+app.include_router(agent_web.router)
+
+if WEB_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
-@app.get("/", tags=["root"], summary="API 根路径")
-def root() -> dict[str, object]:
-    return {
-        "name": "Financial PoC API",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "openapi": "/openapi.json",
-        "endpoints": {
-            "health": "GET /health",
-            "query": "POST /query",
-            "chat": "POST /chat",
-            "index": "POST /index",
-        },
-    }
+@app.get("/", include_in_schema=False)
+def root_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/agent")
+
+
+@app.get("/agent", include_in_schema=False)
+def agent_page() -> FileResponse:
+    if not AGENT_HTML.is_file():
+        raise HTTPException(status_code=404, detail="未找到 web/agent.html")
+    return FileResponse(AGENT_HTML)
 
 
 if __name__ == "__main__":

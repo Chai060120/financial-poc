@@ -305,12 +305,16 @@ class FinancialAgent:
         target: str | Path | None = None,
         *,
         save_report: bool = True,
+        report_year: str | None = None,
+        report_type: str = "年报",
+        auto_fetch_report: bool = True,
     ):
         """
         一键全量分析 Agent：
-        导入财报 → 抽取指标/关键词 → 爬取网络 → 对比股价 → 高估/低估结论。
+        自动检索/导入财报 → 抽取指标/关键词 → 爬取网络新闻 → 对比股价 → 高估/低估结论。
 
         target: PDF 路径 / 公司名 / None=处理 data/raw/pdf/ 下全部 PDF
+        report_year: 如 "2024"；公司模式下可自动从巨潮下载对应年报
         """
         from src.analysis.full_report import run_full_analysis
 
@@ -319,6 +323,9 @@ class FinancialAgent:
             self.process_pdfs,
             target,
             save_report=save_report,
+            report_year=report_year,
+            report_type=report_type,
+            auto_fetch_report=auto_fetch_report,
         )
 
     def chat(self) -> None:

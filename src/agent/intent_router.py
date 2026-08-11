@@ -14,6 +14,7 @@ from src.utils.entity_parser import detect_entity_in_text
 from src.utils.stock_registry import get_stock_registry
 
 _PDF_PATTERN = re.compile(r"\.pdf\b", re.I)
+_YEAR_PATTERN = re.compile(r"(20\d{2})")
 _COMPARE_WITH = re.compile(
     r"(?:和|跟|与|同)(?P<target>[\u4e00-\u9fffA-Za-z0-9\.]{2,20})(?:比|对比|比较)"
 )
@@ -69,7 +70,33 @@ class RoutedIntent:
     pdf_path: Path | None = None
     compare_target: str = ""
     question: str = ""
+    report_year: str = ""
+    report_type: str = "年报"
     notes: list[str] = field(default_factory=list)
+
+
+def _extract_report_meta(text: str) -> tuple[str, str]:
+    """从用户输入抽取报告年份与类型，默认年报。"""
+    report_type = "年报"
+    if re.search(r"半年|中期", text):
+        report_type = "半年报"
+    elif re.search(r"一季|Q1", text, re.I):
+        report_type = "一季报"
+    elif re.search(r"三季|Q3", text, re.I):
+        report_type = "三季报"
+    year = ""
+    match = _YEAR_PATTERN.search(text)
+    if match:
+        year = match.group(1)
+    return year, report_type
+
+
+def _with_report_meta(route: RoutedIntent, text: str) -> RoutedIntent:
+    year, report_type = _extract_report_meta(text)
+    if year:
+        route.report_year = year
+    route.report_type = report_type
+    return route
 
 
 def _resolve_entity(text: str) -> tuple[str, str]:
@@ -117,11 +144,14 @@ def route_intent(
 
     pdf_path = _extract_pdf_path(text)
     if pdf_path is not None:
-        return RoutedIntent(
-            AgentIntent.FULL_ANALYZE,
+        return _with_report_meta(
+            RoutedIntent(
+                AgentIntent.FULL_ANALYZE,
+                text,
+                pdf_path=pdf_path,
+                notes=["检测到 PDF 路径，将导入并全量分析"],
+            ),
             text,
-            pdf_path=pdf_path,
-            notes=["检测到 PDF 路径，将导入并全量分析"],
         )
 
     if has_last_analysis and any(marker in text for marker in _EXPLAIN_MARKERS):
@@ -173,19 +203,25 @@ def route_intent(
                 and not any(m in text for m in ("分析", "评估", "研判"))
                 else AgentIntent.FULL_ANALYZE
             )
-            return RoutedIntent(
-                intent,
+            return _with_report_meta(
+                RoutedIntent(
+                    intent,
+                    text,
+                    entity_name=name,
+                    entity_id=eid,
+                ),
                 text,
-                entity_name=name,
-                entity_id=eid,
             )
         if last_entity_name and any(m in text for m in ("高估", "低估", "估值", "分析")):
-            return RoutedIntent(
-                AgentIntent.FULL_ANALYZE,
+            return _with_report_meta(
+                RoutedIntent(
+                    AgentIntent.FULL_ANALYZE,
+                    text,
+                    entity_name=last_entity_name,
+                    entity_id=last_entity_id,
+                    notes=["沿用上一家公司"],
+                ),
                 text,
-                entity_name=last_entity_name,
-                entity_id=last_entity_id,
-                notes=["沿用上一家公司"],
             )
 
     if name and any(metric in text for metric in _QUERY_METRICS):
@@ -198,12 +234,15 @@ def route_intent(
         )
 
     if name:
-        return RoutedIntent(
-            AgentIntent.FULL_ANALYZE,
+        return _with_report_meta(
+            RoutedIntent(
+                AgentIntent.FULL_ANALYZE,
+                text,
+                entity_name=name,
+                entity_id=eid,
+                notes=["识别到公司，将自动检索财报并分析"],
+            ),
             text,
-            entity_name=name,
-            entity_id=eid,
-            notes=["识别到公司，默认执行全量分析"],
         )
 
     if last_entity_name and (

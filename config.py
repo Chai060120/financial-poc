@@ -147,6 +147,13 @@ AGENT_ENABLE_LLM: bool = os.getenv("FINANCIAL_POC_AGENT_ENABLE_LLM", "true").low
     "yes",
 )
 
+# Cursor SDK：分析完成后可选生成自然语言解读
+CURSOR_API_KEY: str = os.getenv("CURSOR_API_KEY", "").strip()
+CURSOR_NARRATIVE_ENABLED: bool = os.getenv(
+    "FINANCIAL_POC_CURSOR_NARRATIVE", "true"
+).lower() in ("true", "1", "yes")
+CURSOR_MODEL: str = os.getenv("FINANCIAL_POC_CURSOR_MODEL", "composer-2.5").strip()
+
 # 新闻采集
 NEWS_FETCH_LIMIT: int = int(os.getenv("FINANCIAL_POC_NEWS_FETCH_LIMIT", "30"))
 NEWS_DEFAULT_SYMBOLS: tuple[str, ...] = tuple(
@@ -320,6 +327,9 @@ __all__ = [
     "AGENT_NEWS_DAYS",
     "AGENT_RETRIEVAL_TOP_K",
     "AGENT_ENABLE_LLM",
+    "CURSOR_API_KEY",
+    "CURSOR_NARRATIVE_ENABLED",
+    "CURSOR_MODEL",
     "AGENT_WATCHLIST",
     "NEWS_FETCH_LIMIT",
     "NEWS_DEFAULT_SYMBOLS",

@@ -398,6 +398,9 @@ def run_full_analysis(
     target: str | Path | None = None,
     *,
     save_report: bool = True,
+    report_year: str | None = None,
+    report_type: str = "年报",
+    auto_fetch_report: bool = True,
 ) -> list[FullAnalysisResult]:
     """
     一键全量分析入口。
@@ -406,6 +409,9 @@ def run_full_analysis(
         engine: 检索引擎
         process_pdfs_fn: callable(paths, build_index=True) -> dict
         target: PDF 路径 / 公司名 / None=处理 data/raw/pdf/ 全部
+        report_year: 指定财报年份（如 2024）；公司模式可自动从巨潮下载
+        report_type: 年报/半年报/一季报/三季报
+        auto_fetch_report: 公司模式下是否自动检索并下载财报 PDF
     """
     mode, pdf_path, company_query = _resolve_target(target)
     results: list[FullAnalysisResult] = []
@@ -419,9 +425,46 @@ def run_full_analysis(
             raise ValueError(f"无法识别公司: {company_query}")
         name = str(found.get("entity_name") or "")
         eid = str(found.get("entity_id") or "")
-        results.append(
-            analyze_entity_full(name, eid, engine, save_report=save_report)
-        )
+
+        download_note = ""
+        if auto_fetch_report:
+            try:
+                from src.collectors.report_downloader import ensure_report_pdf
+
+                downloaded = ensure_report_pdf(
+                    name,
+                    eid,
+                    report_year,
+                    report_type=report_type or "年报",
+                )
+                payload = process_pdfs_fn([downloaded.path], build_index=True)
+                if not payload.get("success"):
+                    download_note = str(payload.get("message") or "财报入库未完全成功")
+                else:
+                    source_tag = "本地缓存" if downloaded.from_cache else "巨潮资讯"
+                    download_note = (
+                        f"已自动获取{downloaded.report_year}年{downloaded.report_type}"
+                        f"（{source_tag}）：{downloaded.path.name}"
+                    )
+                result = analyze_entity_full(
+                    name,
+                    eid,
+                    engine,
+                    pdf_source=str(downloaded.path),
+                    save_report=save_report,
+                )
+                if download_note:
+                    result.data_warnings = [download_note, *list(result.data_warnings or [])]
+                results.append(result)
+                return results
+            except Exception as exc:
+                logger.warning("自动下载财报失败，回退到已有索引分析: %s", exc)
+                download_note = f"自动下载财报失败，已用现有数据继续分析：{exc}"
+
+        result = analyze_entity_full(name, eid, engine, save_report=save_report)
+        if download_note:
+            result.data_warnings = [download_note, *list(result.data_warnings or [])]
+        results.append(result)
         return results
 
     if mode == "pdf":

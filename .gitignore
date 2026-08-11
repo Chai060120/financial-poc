@@ -1,6 +1,8 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
 .venv/
 venv/
@@ -12,5 +14,23 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Local model caches (optional large dirs)
+# Local model / tool caches
 .cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime / logs
+uvicorn_*.txt
+*.log
+_diag*.py
+
+# Local data artifacts (regenerable; keep directory placeholders if needed)
+data/chroma/
+data/processed/
+data/reference/market_cache.json
+data/raw/pdf/*.pdf
+data/raw/news/*.json
+
+# Large local dumps
+*.part
