@@ -6,6 +6,8 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+
+# environment
 .env
 
 # IDE / OS
@@ -25,12 +27,19 @@ uvicorn_*.txt
 *.log
 _diag*.py
 
-# Local data artifacts (regenerable; keep directory placeholders if needed)
+# local data
+data/raw/
 data/chroma/
 data/processed/
 data/reference/market_cache.json
-data/raw/pdf/*.pdf
-data/raw/news/*.json
+
+# generated reports
+docs/analysis/
+
+# financial documents
+*.pdf
+*.xlsx
+*.csv
 
 # Large local dumps
 *.part
