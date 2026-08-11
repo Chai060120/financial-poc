@@ -127,7 +127,14 @@ class AnalysisAgent:
     def _build_report_card(self, result: FullAnalysisResult) -> str:
         peer_rows = build_peer_rows(result, self._fundamentals_for)
         card = format_report_card(result, peer_rows)
-        return append_cursor_narrative(card, result.entity_name)
+        card = append_cursor_narrative(card, result.entity_name)
+        try:
+            from src.agent.llm_research import append_llm_research_report
+
+            card = append_llm_research_report(card, result)
+        except Exception as exc:
+            logger.debug("LLM 研报增强跳过: %s", exc)
+        return card
 
     def _handle_full_analyze(self, route: RoutedIntent) -> AgentTurnResult:
         target: str | Path | None

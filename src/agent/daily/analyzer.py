@@ -16,18 +16,14 @@ if str(_PROJECT_ROOT) not in sys.path:
 from config import AGENT_RETRIEVAL_TOP_K, AGENT_WATCHLIST, setup_logging
 from src.agent.daily.event_detector import detect_events
 from src.agent.daily.types import DailyAnalysis, DailyContext, EventItem
-from src.agent.workflow import DEFAULT_SYSTEM_PROMPT, merge_retrieval_context
+from src.agent.prompts.news_prompt import build_daily_summary_prompt
+from src.agent.prompts.system_prompt import FINANCIAL_LLM_TEMPERATURE, SYSTEM_PROMPT
+from src.agent.workflow import merge_retrieval_context
 from src.llm.llm_client import LLMClientError, create_llm_client
 from src.utils.stock_registry import get_stock_registry
 from src.vectorstore.unified_retrieval import UnifiedRetrievalEngine
 
 logger = setup_logging(__name__)
-
-_SYSTEM_PROMPT = (
-    "你是专业的金融信息处理分析师。"
-    "请基于提供的参考资料与新闻事件，生成结构化 JSON 分析结果。"
-    "不要编造不存在的数据。"
-)
 
 
 def _filter_news_by_date(records: list[dict[str, Any]], report_date: str) -> list[dict[str, Any]]:
@@ -121,12 +117,10 @@ def analyze_daily(
     for item in analysis.major_events[:5] + analysis.bullish[:3] + analysis.bearish[:3]:
         event_lines.append(f"- [{item.sentiment}] {item.title}")
 
-    user_prompt = (
-        f"报告日期: {ctx.report_date}\n\n"
-        f"【今日新闻事件】\n" + "\n".join(event_lines or ["- 无"]) + "\n\n"
-        f"【参考资料】\n{context or '（无向量检索结果）'}\n\n"
-        "请输出 JSON:\n"
-        '{"summary": "200字以内市场摘要", "highlights": ["要点1", "要点2"]}'
+    user_prompt = build_daily_summary_prompt(
+        report_date=ctx.report_date,
+        event_lines=event_lines,
+        context=context,
     )
 
     try:
@@ -135,7 +129,12 @@ def analyze_daily(
             logger.info("LLM 未配置，使用规则引擎摘要")
             return analysis
 
-        result = client.generate_with_metadata(_SYSTEM_PROMPT, user_prompt)
+        result = client.generate_with_metadata(
+            SYSTEM_PROMPT,
+            user_prompt,
+            temperature=FINANCIAL_LLM_TEMPERATURE,
+            response_format={"type": "json_object"},
+        )
         try:
             payload = _parse_llm_json(result.answer)
             analysis = _merge_llm_analysis(analysis, payload)

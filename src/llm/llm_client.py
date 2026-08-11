@@ -140,14 +140,29 @@ class LLMClient:
 
         return create_provider(name, allow_preview=False)
 
-    def generate(self, system_prompt: str, user_prompt: str) -> str:
+    def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.1,
+        response_format: dict[str, Any] | None = None,
+    ) -> str:
         """调用 LLM 生成回答。"""
-        return self.generate_with_metadata(system_prompt, user_prompt).answer
+        return self.generate_with_metadata(
+            system_prompt,
+            user_prompt,
+            temperature=temperature,
+            response_format=response_format,
+        ).answer
 
     def generate_with_metadata(
         self,
         system_prompt: str,
         user_prompt: str,
+        *,
+        temperature: float = 0.1,
+        response_format: dict[str, Any] | None = None,
     ) -> LLMGenerateResult:
         """调用 LLM 并返回带用量与耗时的结果。"""
         if not system_prompt or not system_prompt.strip():
@@ -158,6 +173,8 @@ class LLMClient:
         response = self._provider.generate_chat(
             system_prompt.strip(),
             user_prompt.strip(),
+            temperature=temperature,
+            response_format=response_format,
         )
 
         return LLMGenerateResult(

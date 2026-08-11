@@ -31,6 +31,7 @@ from config import (
 from api.serializers import serialize_plan, serialize_retrieval_result
 from src.agent.daily.runner import DailyAgent, run_daily_agent
 from src.agent.daily.types import DailyContext
+from src.agent.prompts.system_prompt import RAG_QA_SYSTEM_PROMPT
 from src.agent.workflow import AgentWorkflow
 from src.chat.history import ConversationHistory
 from src.collectors.news_collector import DEFAULT_RSS_SOURCES, collect_and_update_news
@@ -45,15 +46,8 @@ logger = setup_logging(__name__)
 # Agent 能力范围：仅 PDF 财报 + 财经新闻
 AGENT_DATA_SOURCES: tuple[str, ...] = ("pdf", "news")
 
-FINANCIAL_AGENT_PROMPT = (
-    "你是金融信息处理 Agent，只使用两类资料回答用户问题："
-    "（1）PDF 财报、定期报告；（2）财经新闻资讯。"
-    "请严格基于提供的参考资料作答，不要编造资料中不存在的数据。"
-    "引用时请区分来源是「财报」还是「新闻」。"
-    "若用户问题省略了公司或指标主体，请结合对话历史理解其指代。"
-    "若资料中出现分季度财务数据而用户询问全年指标，请将各季度数值加总后作答。"
-    "若参考资料不足以回答，请明确说明。"
-)
+# 兼容旧导入名：统一指向 Prompt 模块
+FINANCIAL_AGENT_PROMPT = RAG_QA_SYSTEM_PROMPT
 
 
 @dataclass

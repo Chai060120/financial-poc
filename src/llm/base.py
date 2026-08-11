@@ -96,7 +96,14 @@ class LLMProvider(ABC):
         """根据单条 prompt 生成文本。"""
 
     @abstractmethod
-    def generate_chat(self, system_prompt: str, user_prompt: str) -> LLMResponse:
+    def generate_chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.1,
+        response_format: dict[str, Any] | None = None,
+    ) -> LLMResponse:
         """根据 system + user prompt 生成文本并返回元数据。"""
 
     @abstractmethod
@@ -194,7 +201,14 @@ class OpenAICompatibleProvider(LLMProvider):
             raise ValueError("prompt 不能为空")
         return self.generate_chat("", prompt.strip()).text
 
-    def generate_chat(self, system_prompt: str, user_prompt: str) -> LLMResponse:
+    def generate_chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.1,
+        response_format: dict[str, Any] | None = None,
+    ) -> LLMResponse:
         if not user_prompt or not user_prompt.strip():
             raise ValueError("user_prompt 不能为空")
         if not self.is_available() or self._client is None:
@@ -205,14 +219,27 @@ class OpenAICompatibleProvider(LLMProvider):
             messages.append({"role": "system", "content": system_prompt.strip()})
         messages.append({"role": "user", "content": user_prompt.strip()})
 
+        request: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if response_format:
+            request["response_format"] = response_format
+
         started = time.perf_counter()
         try:
-            response = self._client.chat.completions.create(
-                model=self._model,
-                messages=messages,
-            )
+            response = self._client.chat.completions.create(**request)
         except Exception as exc:
-            raise self._translate_error(exc) from exc
+            if response_format is not None:
+                logger.debug("response_format 不被支持，回退普通调用: %s", exc)
+                request.pop("response_format", None)
+                try:
+                    response = self._client.chat.completions.create(**request)
+                except Exception as retry_exc:
+                    raise self._translate_error(retry_exc) from retry_exc
+            else:
+                raise self._translate_error(exc) from exc
 
         duration_ms = int((time.perf_counter() - started) * 1000)
         text = self._extract_text(response)
@@ -228,11 +255,12 @@ class OpenAICompatibleProvider(LLMProvider):
             duration_ms=duration_ms,
         )
         logger.info(
-            "LLM 调用完成: provider=%s, model=%s, tokens=%d, duration=%dms",
+            "LLM 调用完成: provider=%s, model=%s, tokens=%d, duration=%dms, temperature=%s",
             result.provider,
             result.model,
             result.total_tokens,
             result.duration_ms,
+            temperature,
         )
         return result
 
@@ -303,7 +331,15 @@ class PromptPreviewProvider(LLMProvider):
     def generate(self, prompt: str) -> str:
         return self.generate_chat("", prompt).text
 
-    def generate_chat(self, system_prompt: str, user_prompt: str) -> LLMResponse:
+    def generate_chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float = 0.1,
+        response_format: dict[str, Any] | None = None,
+    ) -> LLMResponse:
+        _ = temperature, response_format
         sections: list[str] = [
             "【Prompt Preview 模式】",
             "未检测到有效 API Key，未调用大语言模型。",

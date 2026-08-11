@@ -26,17 +26,13 @@ from src.utils.source_display import format_reference_meta, source_type_label
 from src.vectorstore.retrieval import RetrievalError, RetrievalResult
 from src.vectorstore.unified_retrieval import UnifiedRetrievalEngine, create_retrieval_engine
 
-logger = setup_logging(__name__)
-
-DEFAULT_SYSTEM_PROMPT = (
-    "你是金融信息处理 Agent，只使用两类资料回答用户问题："
-    "（1）PDF 财报、定期报告；（2）财经新闻资讯。"
-    "请严格基于提供的参考资料作答，不要编造资料中不存在的数据。"
-    "引用时请区分来源是「财报」还是「新闻」。"
-    "若用户问题省略了公司或指标主体，请结合对话历史理解其指代。"
-    "若资料中出现分季度财务数据而用户询问全年指标，请将各季度数值加总后作答。"
-    "若参考资料不足以回答，请明确说明。"
+from src.agent.prompts import (
+    FINANCIAL_LLM_TEMPERATURE,
+    RAG_QA_SYSTEM_PROMPT,
 )
+
+# 兼容旧导入名：统一指向 Prompt 模块
+DEFAULT_SYSTEM_PROMPT = RAG_QA_SYSTEM_PROMPT
 
 
 class PlanStep:
@@ -240,7 +236,11 @@ class GenerateStep:
             memory=ctx.metadata.get("memory"),
             plan=ctx.plan,
         )
-        llm_result = client.generate_with_metadata(self.system_prompt, user_prompt)
+        llm_result = client.generate_with_metadata(
+            self.system_prompt,
+            user_prompt,
+            temperature=FINANCIAL_LLM_TEMPERATURE,
+        )
 
         memory = ctx.metadata.get("memory")
         if isinstance(memory, (ConversationMemory, ConversationHistory)):
