@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from config import AGENT_WATCHLIST
+from src.agent.citations import collect_citations, format_citations_section
 from src.analysis.full_report import FullAnalysisResult
 from src.analysis.market_data import fetch_market_snapshot_enriched
 
@@ -210,11 +211,16 @@ def format_report_card(
     for reason in result.synthesis_reasons[:8]:
         lines.append(f"    · {reason}")
 
+    from src.agent.citations import collect_citations, format_citations_section
+
+    lines.extend(["", format_citations_section(collect_citations(result))])
+
     lines.extend(
         [
             "",
             "──────────────────────────────────────────────────────────",
             "  免责声明: PoC 自动分析，不构成投资建议",
+            "  提示: 可输入「导出报告」或网页点击导出；对比可用「茅台 vs 五粮液」",
         ]
     )
     if result.report_path:

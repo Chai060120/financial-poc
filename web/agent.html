@@ -456,13 +456,13 @@
         </div>
 
         <div class="tip">
-          <strong>用法：</strong>对话框输入「美的集团 2024」即可自动从巨潮下载年报并抓取新闻。
-          也可手动上传 PDF；乱码文件名建议改成
-          <strong>公司名+年份+年报.pdf</strong>。
+          <strong>用法：</strong>输入「美的集团 2024」自动下年报；输入「茅台 vs 五粮液」做公司对比。
+          报告含<strong>引用溯源</strong>；可点下方「导出报告」下载 Markdown/HTML。
         </div>
 
         <div class="side-actions">
           <button class="btn primary" id="btnUploadSide" type="button">上传 PDF 财报</button>
+          <button class="btn" id="btnExport" type="button">导出报告</button>
           <button class="btn" id="btnReset" type="button">清空会话</button>
           <a class="btn" href="/docs" target="_blank" rel="noreferrer">API Docs</a>
         </div>
@@ -478,7 +478,7 @@
         </div>
 
         <div class="chat" id="chat">
-          <div class="bubble system">输入「公司名」或「公司名+年份」即可自动检索财报并分析，例如：美的集团 2024。也可上传 PDF。分析后可追问：为什么？ / 和同业比呢？ / 净利润多少？</div>
+          <div class="bubble system">输入「公司名+年份」分析，或「茅台 vs 五粮液」对比。报告含引用溯源；可点「导出报告」下载。</div>
         </div>
 
         <div class="busy" id="busy"><span class="dot"></span>分析中，请稍候（首次加载模型可能较慢）…</div>
@@ -486,7 +486,7 @@
         <div class="composer">
           <div class="composer-box">
             <button class="upload-btn" id="btnUpload" type="button" title="上传 PDF">＋</button>
-            <textarea id="input" rows="1" placeholder="例如：美的集团 2024 / 贵州茅台2024年报…"></textarea>
+            <textarea id="input" rows="1" placeholder="例如：美的集团 2024 / 茅台 vs 五粮液 / 导出报告…"></textarea>
             <button class="send" id="btnSend" type="button">发送</button>
           </div>
           <div class="hint-row">
@@ -652,8 +652,45 @@
       document.getElementById("file").click();
     }
 
+    async function exportReport(fmt) {
+      if (state.busy) return;
+      setBusy(true);
+      try {
+        const qs = new URLSearchParams();
+        qs.set("format", fmt || "md");
+        if (state.sessionId) qs.set("session_id", state.sessionId);
+        const res = await fetch("/api/agent/export?" + qs.toString());
+        if (!res.ok) {
+          let detail = "导出失败";
+          try {
+            const data = await res.json();
+            detail = data.detail || detail;
+          } catch (_) {}
+          throw new Error(detail);
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get("content-disposition") || "";
+        const match = /filename="?([^"]+)"?/i.exec(cd);
+        const filename = match ? match[1] : ("report." + (fmt === "html" ? "html" : "md"));
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        addBubble("已导出：" + filename + (fmt === "html" ? "（可用浏览器打开后打印为 PDF）" : ""), "system");
+      } catch (err) {
+        addBubble("导出失败：" + err.message, "system");
+      } finally {
+        setBusy(false);
+      }
+    }
+
     document.getElementById("btnSend").onclick = () => sendMessage(inputEl.value);
     document.getElementById("btnReset").onclick = resetSession;
+    document.getElementById("btnExport").onclick = () => exportReport("md");
     document.getElementById("btnUpload").onclick = pickPdf;
     document.getElementById("btnUploadSide").onclick = pickPdf;
     document.getElementById("file").onchange = (e) => {

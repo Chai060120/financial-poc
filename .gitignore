@@ -35,6 +35,7 @@ data/reference/market_cache.json
 
 # generated reports
 docs/analysis/
+docs/exports/
 
 # financial documents
 *.pdf

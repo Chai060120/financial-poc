@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from api.dependencies import AppState, get_app_state
@@ -78,3 +79,21 @@ async def post_agent_upload(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AgentChatResponse(**payload)
+
+
+@router.get("/export", summary="导出最近一次分析/对比报告")
+def export_agent_report(
+    session_id: str | None = Query(default=None),
+    format: str = Query(default="md", pattern="^(md|html|markdown)$"),
+    state: AppState = Depends(get_app_state),
+):
+    hub = state.get_web_agent_hub()
+    try:
+        path = hub.export_report(session_id=session_id, fmt=format)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"导出失败: {exc}") from exc
+
+    media = "text/markdown; charset=utf-8" if path.suffix == ".md" else "text/html; charset=utf-8"
+    return FileResponse(path, media_type=media, filename=path.name)

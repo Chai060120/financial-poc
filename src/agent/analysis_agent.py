@@ -34,21 +34,26 @@ logger = setup_logging(__name__)
 
 AGENT_WELCOME = """
 ════════════════════════════════════════════════════════════
-  Financial Agent · 财报对话分析
+  Financial Research Agent · 财报对话分析
 ════════════════════════════════════════════════════════════
   直接输入「公司名」或「公司名 + 年份」，例如：
     · 美的集团
     · 美的集团 2024
     · 贵州茅台2024年报
-  Agent 会自动检索巨潮年报、抓取网络新闻，并输出五段报告。
+  Agent 会自动检索巨潮年报、抓取网络新闻，并输出带引用溯源的报告。
   也可继续手动上传 PDF。
 
-  之后可继续追问，例如：
-    · 为什么低估？ / 依据是什么？
-    · 和同业比呢？ / 和某某公司比呢？
-    · 净利润多少？ / PE 多少？
+  公司对比：
+    · 茅台 vs 五粮液
+    · 对比美的集团和格力电器
+    · 和某某公司比呢？
 
-  命令: 帮助 | 清空 | 退出
+  之后可继续追问：
+    · 为什么低估？ / 依据是什么？ / 出处在哪？
+    · 净利润多少？ / PE 多少？
+    · 导出报告
+
+  命令: 帮助 | 清空 | 导出报告 | 退出
 ════════════════════════════════════════════════════════════
 """
 
@@ -348,79 +353,121 @@ class AnalysisAgent:
         return AgentTurnResult(AgentIntent.COMPARE, "\n".join(lines))
 
     def _handle_compare_with(self, route: RoutedIntent) -> AgentTurnResult:
+        from src.agent.compare_card import (
+            ensure_peer_fundamentals,
+            format_company_compare_card,
+        )
+
         base_name = route.entity_name or self.session.last_entity_name
         base_id = route.entity_id or self.session.last_entity_id
         other_name = route.compare_target
         if not base_name:
             return AgentTurnResult(
                 AgentIntent.COMPARE_WITH,
-                "请先分析一家公司，再问：和同业比呢？ / 和某某公司比呢？",
+                "请先分析一家公司，或直接输入：茅台 vs 五粮液",
             )
         if not other_name:
-            return AgentTurnResult(AgentIntent.COMPARE_WITH, "请说明要对比的公司，例如：和某某公司比呢？")
+            return AgentTurnResult(
+                AgentIntent.COMPARE_WITH,
+                "请说明要对比的公司，例如：茅台 vs 五粮液 / 和某某公司比呢？",
+            )
 
         registry = get_stock_registry()
+        base = registry.lookup_by_name(base_name) or detect_fallback(base_name, base_id)
         other = registry.lookup_by_name(other_name) or {}
+        if not base_id:
+            base_id = str(base.get("entity_id") or "")
+        base_name = str(base.get("entity_name") or base_name)
         other_id = str(other.get("entity_id") or "")
         other_name = str(other.get("entity_name") or other_name)
 
+        notes: list[str] = []
         fund_a = self._fundamentals_for(base_name, base_id)
-        fund_b = self._fundamentals_for(other_name, other_id)
+        if not (fund_a.get("eps") or fund_a.get("net_profit")):
+            fund_a, note_a = ensure_peer_fundamentals(
+                name=base_name,
+                entity_id=base_id,
+                fundamentals_lookup=self._fundamentals_for,
+                financial_agent=self.financial,
+                report_year=route.report_year or None,
+            )
+            if note_a:
+                notes.append(note_a)
+
+        fund_b, note_b = ensure_peer_fundamentals(
+            name=other_name,
+            entity_id=other_id,
+            fundamentals_lookup=self._fundamentals_for,
+            financial_agent=self.financial,
+            report_year=route.report_year or None,
+        )
+        if note_b:
+            notes.append(note_b)
+
         snap_a = fetch_market_snapshot_enriched(base_id, base_name, fund_a)
         snap_b = fetch_market_snapshot_enriched(other_id, other_name, fund_b)
 
-        def _disp(fund: dict, key: str) -> str:
-            item = fund.get(key)
-            if isinstance(item, dict) and item.get("display"):
-                return str(item["display"])
-            return "—"
+        table = format_company_compare_card(
+            left_name=base_name,
+            right_name=other_name,
+            left_id=base_id,
+            right_id=other_id,
+            fund_a=fund_a,
+            fund_b=fund_b,
+            snap_a=snap_a,
+            snap_b=snap_b,
+            notes=notes,
+        )
+        self.session.last_entity_name = base_name
+        self.session.last_entity_id = base_id
+        self.session.last_report_card = table
 
-        def _num(v: float | None) -> str:
-            return f"{v:.2f}" if v is not None else "—"
-
-        lines = [
-            f"{base_name} vs {other_name}",
-            "",
-            f"{'指标':<12} {base_name:<16} {other_name:<16}",
-            f"{'现价':<12} {_num(snap_a.price):<16} {_num(snap_b.price):<16}",
-            f"{'PE':<12} {_num(snap_a.pe_ttm):<16} {_num(snap_b.pe_ttm):<16}",
-            f"{'PB':<12} {_num(snap_a.pb):<16} {_num(snap_b.pb):<16}",
-            f"{'净利润':<12} {_disp(fund_a, 'net_profit'):<16} {_disp(fund_b, 'net_profit'):<16}",
-            f"{'营收':<12} {_disp(fund_a, 'revenue'):<16} {_disp(fund_b, 'revenue'):<16}",
-            f"{'EPS':<12} {_disp(fund_a, 'eps'):<16} {_disp(fund_b, 'eps'):<16}",
-            f"{'ROE':<12} {_disp(fund_a, 'roe'):<16} {_disp(fund_b, 'roe'):<16}",
-        ]
-
-        note = ""
-        if snap_a.pe_ttm and snap_b.pe_ttm:
-            if snap_a.pe_ttm > snap_b.pe_ttm * 1.1:
-                note = f"{base_name} 的 PE 更高（相对更贵）"
-            elif snap_a.pe_ttm < snap_b.pe_ttm * 0.9:
-                note = f"{base_name} 的 PE 更低（相对更便宜）"
-            else:
-                note = "两家 PE 接近"
-        if note:
-            lines.extend(["", f"简评: {note}"])
-
-        if not fund_b.get("eps") and not fund_b.get("net_profit"):
-            lines.append(
-                f"提示: {other_name} 本地可能尚未入库财报，指标可能不完整。"
-                "可将 PDF 放入 data/raw/pdf/ 后执行 python scripts/agent.py pdf"
-            )
-
-        # 可选 Cursor 润色
-        table = "\n".join(lines)
         cursor_answer = answer_followup_question(
             f"请简要比较 {base_name} 和 {other_name}",
             entity_name=base_name,
             context=table,
         )
         if cursor_answer:
-            return AgentTurnResult(
-                AgentIntent.COMPARE_WITH,
-                table + "\n\n自然语言解读:\n" + cursor_answer,
-            )
+            message = table + "\n\n自然语言解读:\n" + cursor_answer
+            self.session.last_report_card = message
+            return AgentTurnResult(AgentIntent.COMPARE_WITH, message)
         return AgentTurnResult(AgentIntent.COMPARE_WITH, table)
+
+    def _handle_export(self, route: RoutedIntent) -> AgentTurnResult:
+        from src.agent.report_export import export_report
+
+        report = self.session.last_report_card.strip()
+        if not report and self.session.last_analysis is not None:
+            report = self._build_report_card(self.session.last_analysis)
+            self.session.last_report_card = report
+        if not report:
+            return AgentTurnResult(
+                AgentIntent.EXPORT,
+                "暂无可导出报告。请先分析一家公司，或执行「茅台 vs 五粮液」对比。",
+            )
+
+        try:
+            md_path = export_report(
+                report,
+                entity_name=self.session.last_entity_name or "report",
+                fmt="md",
+            )
+            html_path = export_report(
+                report,
+                entity_name=self.session.last_entity_name or "report",
+                fmt="html",
+            )
+        except Exception as exc:
+            return AgentTurnResult(AgentIntent.EXPORT, f"导出失败: {exc}")
+
+        return AgentTurnResult(
+            AgentIntent.EXPORT,
+            "报告已导出：\n"
+            f"  Markdown: {md_path}\n"
+            f"  HTML:     {html_path}\n"
+            "可用浏览器打开 HTML，再「打印 → 另存为 PDF」。\n"
+            "网页端也可点击「导出报告」直接下载。",
+        )
 
     def handle(self, user_input: str) -> AgentTurnResult:
         route = route_intent(
@@ -443,6 +490,7 @@ class AnalysisAgent:
             AgentIntent.QUERY: self._handle_query,
             AgentIntent.COMPARE: self._handle_compare,
             AgentIntent.COMPARE_WITH: self._handle_compare_with,
+            AgentIntent.EXPORT: self._handle_export,
             AgentIntent.FULL_ANALYZE: self._handle_full_analyze,
             AgentIntent.INGEST_PDF: self._handle_full_analyze,
             AgentIntent.VALUATE: self._handle_full_analyze,
@@ -450,7 +498,6 @@ class AnalysisAgent:
 
         handler = handlers.get(route.intent)
         if handler is not None:
-            # VALUATE / INGEST 统一走全量时，补齐 entity
             if route.intent in {AgentIntent.VALUATE, AgentIntent.INGEST_PDF}:
                 route = RoutedIntent(
                     AgentIntent.FULL_ANALYZE,
@@ -458,12 +505,13 @@ class AnalysisAgent:
                     entity_name=route.entity_name,
                     entity_id=route.entity_id,
                     pdf_path=route.pdf_path,
+                    report_year=route.report_year,
+                    report_type=route.report_type,
                 )
             result = handler(route)
             self.session.turns.append((user_input, result.message))
             return result
 
-        # UNKNOWN：有公司名则分析；有上次公司且像追问则解释/查询
         if route.entity_name or route.pdf_path:
             merged = RoutedIntent(
                 AgentIntent.FULL_ANALYZE,
@@ -471,6 +519,8 @@ class AnalysisAgent:
                 entity_name=route.entity_name,
                 entity_id=route.entity_id,
                 pdf_path=route.pdf_path,
+                report_year=route.report_year,
+                report_type=route.report_type,
             )
             result = self._handle_full_analyze(merged)
             self.session.turns.append((user_input, result.message))
@@ -495,7 +545,7 @@ class AnalysisAgent:
 
         return AgentTurnResult(
             AgentIntent.UNKNOWN,
-            "请输入公司名或 PDF 文件名。分析完成后可追问：为什么？ / 和同业比呢？ / 净利润多少？",
+            "请输入公司名或 PDF。可试：茅台 vs 五粮液 / 导出报告 / 为什么？",
         )
 
     def run_interactive(self) -> None:
@@ -512,7 +562,6 @@ class AnalysisAgent:
                 print("再见。")
                 break
 
-            # 先路由，避免追问也显示「分析中」
             preview = route_intent(
                 user_input,
                 last_entity_name=self.session.last_entity_name,
@@ -529,6 +578,7 @@ class AnalysisAgent:
                 AgentIntent.QUERY,
                 AgentIntent.COMPARE,
                 AgentIntent.COMPARE_WITH,
+                AgentIntent.EXPORT,
             }:
                 print("\n处理中…")
 
@@ -537,6 +587,10 @@ class AnalysisAgent:
                 print(result.message)
                 break
             print("\n" + result.message)
+
+
+def detect_fallback(name: str, entity_id: str) -> dict[str, str]:
+    return {"entity_name": name, "entity_id": entity_id}
 
 
 def run_analysis_agent(financial_agent: FinancialAgent) -> None:

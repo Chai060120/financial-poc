@@ -18,7 +18,17 @@ _YEAR_PATTERN = re.compile(r"(20\d{2})")
 _COMPARE_WITH = re.compile(
     r"(?:和|跟|与|同)(?P<target>[\u4e00-\u9fffA-Za-z0-9\.]{2,20})(?:比|对比|比较)"
 )
-_EXPLAIN_MARKERS = ("为什么", "为何", "依据", "原因", "怎么判断", "凭什么")
+_VS_COMPARE = re.compile(
+    r"(?P<left>[\u4e00-\u9fffA-Za-z0-9\.]{2,20})"
+    r"\s*(?:vs\.?|VS\.?|对比|比)\s*"
+    r"(?P<right>[\u4e00-\u9fffA-Za-z0-9\.]{2,20})"
+)
+_COMPARE_PAIR = re.compile(
+    r"(?:对比|比较)\s*(?P<left>[\u4e00-\u9fffA-Za-z0-9\.]{2,20})"
+    r"\s*(?:和|与|跟)\s*(?P<right>[\u4e00-\u9fffA-Za-z0-9\.]{2,20})"
+)
+_EXPLAIN_MARKERS = ("为什么", "为何", "依据", "原因", "怎么判断", "凭什么", "溯源", "引用来源")
+_EXPORT_MARKERS = ("导出报告", "导出", "下载报告", "export")
 _FULL_ANALYZE_MARKERS = (
     "分析",
     "评估",
@@ -55,6 +65,7 @@ class AgentIntent(str, Enum):
     QUERY = "query"
     INGEST_PDF = "ingest_pdf"
     EXPLAIN = "explain"
+    EXPORT = "export"
     HELP = "help"
     RESET = "reset"
     EXIT = "exit"
@@ -162,16 +173,48 @@ def route_intent(
             entity_id=last_entity_id,
         )
 
+    if any(marker in lowered for marker in _EXPORT_MARKERS) or text.strip() in {
+        "导出报告",
+        "下载报告",
+    }:
+        return RoutedIntent(
+            AgentIntent.EXPORT,
+            text,
+            entity_name=last_entity_name,
+            entity_id=last_entity_id,
+        )
+
+    vs_match = _VS_COMPARE.search(text) or _COMPARE_PAIR.search(text)
+    if vs_match:
+        left_raw = vs_match.group("left").strip()
+        right_raw = vs_match.group("right").strip()
+        left_name, left_id = _resolve_entity(left_raw)
+        right_name, right_id = _resolve_entity(right_raw)
+        return _with_report_meta(
+            RoutedIntent(
+                AgentIntent.COMPARE_WITH,
+                text,
+                entity_name=left_name or last_entity_name or left_raw,
+                entity_id=left_id or last_entity_id,
+                compare_target=right_name or right_raw,
+                notes=["双公司对比"],
+            ),
+            text,
+        )
+
     match = _COMPARE_WITH.search(text)
     if match:
         compare_name = match.group("target").strip()
         name, eid = _resolve_entity(compare_name)
-        return RoutedIntent(
-            AgentIntent.COMPARE_WITH,
+        return _with_report_meta(
+            RoutedIntent(
+                AgentIntent.COMPARE_WITH,
+                text,
+                entity_name=last_entity_name or name,
+                entity_id=last_entity_id or eid,
+                compare_target=name or compare_name,
+            ),
             text,
-            entity_name=last_entity_name or name,
-            entity_id=last_entity_id or eid,
-            compare_target=name or compare_name,
         )
 
     name, eid = _resolve_entity(text)
